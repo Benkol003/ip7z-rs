@@ -1,0 +1,191 @@
+//adapted from winsafe's implementation of BSTR.
+
+use std::{alloc::Layout,str::EncodeUtf16};
+
+use widestring::U16Str;
+
+use crate::win_ffi::{HRESULT,HrResult};
+
+/// A
+/// [string data type](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/automat/bstr)
+/// used with COM automation.
+///
+/// Automatically calls
+/// [`SysFreeString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysfreestring)
+/// when the object goes out of scope.
+#[repr(transparent)]
+pub struct BSTR(*mut u16);
+
+impl Drop for BSTR {
+	fn drop(&mut self) {
+		if !self.0.is_null() {
+			self.SysFreeString();
+		}
+	}
+}
+
+impl Default for BSTR {
+	fn default() -> Self {
+		Self(std::ptr::null_mut())
+	}
+}
+
+impl std::fmt::Display for BSTR {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let slice = U16Str::from_slice(self.as_slice());
+		std::fmt::Display::fmt(&slice.display(),f)
+	}
+}
+impl std::fmt::Debug for BSTR {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "BSTR: \"{}\"", self)
+	}
+}
+
+impl BSTR {
+
+	fn real_ptr_mut(&mut self) -> *mut u16 {
+		unsafe { self.0.byte_offset(-4) }
+	}
+
+	fn real_ptr(&self) -> *const u16 {
+		unsafe { self.0.byte_offset(-4) }
+	}
+
+
+	fn layout(wchars: usize) -> HrResult<Layout> {
+		match Layout::from_size_align((wchars*2) + 4 + 2, 4) {
+			Ok(l) => Ok(l),
+			Err(_) => Err(HRESULT::E_OUTOFMEMORY)
+		}
+	}
+
+	unsafe fn copy_from( se: EncodeUtf16, wchars: u32, ptr: *mut u16) {
+		unsafe {
+			let bstr_sz = ptr as *mut u32;
+			*bstr_sz = (wchars * 2) as u32;
+			let mut bstr = ptr.byte_offset(4) as *mut u16;
+			se.for_each(|wc| {
+				*bstr = wc;
+				bstr = bstr.byte_add(2);
+			});
+			*bstr = 0; //null terminator
+		}
+	}
+
+	pub fn SysFreeString(&mut self) {
+		unsafe {
+			let ptr = self.real_ptr_mut();
+			std::alloc::dealloc(ptr as *mut u8, Self::layout(*ptr as usize).unwrap());
+			self.0 = std::ptr::null_mut();
+		}
+	}
+
+	/// [`SysAllocString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysallocstring)
+	/// function.
+	#[must_use]
+	pub fn SysAllocString(s: &str) -> HrResult<Self> {
+		unsafe {
+			let wchars = s.encode_utf16().count();
+
+			let ptr = std::alloc::alloc(Self::layout(wchars)?) as *mut u16;
+
+			if ptr.is_null() { 
+				Err(HRESULT::E_OUTOFMEMORY) 
+			} else {
+				Self::copy_from(s.encode_utf16(), wchars as u32, ptr);
+				Ok(Self(ptr.byte_offset(4))) 
+			}
+		}
+	}
+
+	/// [`SysReAllocString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysreallocstring)
+	/// function.
+	///
+	/// The underlying pointer is automatically updated.
+	pub fn SysReAllocString(&mut self, s: &str) -> HrResult<()> {
+		unsafe {
+			let wchars = s.encode_utf16().count();
+
+			let old_ptr = self.real_ptr_mut() as *mut u32;
+
+			let ptr = std::alloc::realloc(old_ptr as *mut u8, Self::layout(*old_ptr as usize)?, wchars * 2) as *mut u16;
+			if ptr.is_null() {
+				Err(HRESULT::E_OUTOFMEMORY)
+			} else {
+				Self::copy_from(s.encode_utf16(),wchars as u32,ptr);
+				self.0 = ptr.byte_offset(4);
+				Ok(())
+			}
+		}
+	}
+
+	/// [`SysStringLen`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysstringlen)
+	/// function.
+	#[must_use]
+	pub fn SysStringLen(&self) -> u32 {
+		unsafe {
+			match self.0.is_null() {
+				true => 0,
+				false => {
+					*self.real_ptr() as u32
+				}
+			} 
+		}
+	}
+
+	/// Creates a new `BSTR` by wrapping a pointer.
+	///
+	/// # Safety
+	///
+	/// Be sure the pointer has the correct type and isn't owned by anyone else,
+	/// otherwise you may cause memory access violations.
+	#[must_use]
+	pub const unsafe fn from_ptr(p: *mut u16) -> Self {
+		Self(p)
+	}
+
+	/// Returns the underlying
+	/// [`LPWSTR`](https://learn.microsoft.com/en-us/windows/win32/learnwin32/working-with-strings)
+	/// pointer to the null-terminated wide string.
+	#[must_use]
+	pub const fn as_ptr(&self) -> *mut u16 {
+		self.0
+	}
+
+	/// Returns a pointer to the underlying
+	/// [`LPWSTR`](https://learn.microsoft.com/en-us/windows/win32/learnwin32/working-with-strings)
+	/// pointer to the null-terminated wide string.
+	#[must_use]
+	pub const fn as_mut_ptr(&mut self) -> *mut *mut u16 {
+		&mut self.0
+	}
+
+	/// Returns the underlying
+	/// [`LPWSTR`](https://learn.microsoft.com/en-us/windows/win32/learnwin32/working-with-strings)
+	/// memory block as a null-terminated `u16` slice.
+	#[must_use]
+	pub fn as_slice(&self) -> &[u16] {
+		unsafe { 
+			let len = self.SysStringLen();
+			if len==0 {
+				&[]
+			} else {
+				std::slice::from_raw_parts(self.0, self.SysStringLen() as usize + 2)
+			}
+		}
+	}
+
+	/// Ejects the underlying
+	/// [`LPWSTR`](https://learn.microsoft.com/en-us/windows/win32/learnwin32/working-with-strings)
+	/// pointer leaving a null pointer in its place, so that
+	/// [`SysFreeString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysfreestring)
+	/// won't be called.
+	///
+	/// Be sure to free the pointer, otherwise, as the name of this method
+	/// implies, you will cause a memory leak.
+	#[must_use]
+	pub const fn leak(&mut self) -> *mut u16 {
+		std::mem::replace(&mut self.0, std::ptr::null_mut())
+	}
+}

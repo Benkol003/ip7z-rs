@@ -1,0 +1,17 @@
+[package]
+name = "ip7z"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "ip7z"
+path =  "src/lib.rs"
+
+[dependencies]
+bitflags = "2.11.0"
+com = { git = "https://github.com/Benkol003/com-rs.git", version = "0.6.0", features = ["class"]}
+num_enum = "0.7.5"
+strum = "0.28.0"
+strum_macros = "0.28.0"
+uasm = "1.0.4"
+widestring = { version = "1.2.1"}
