@@ -2,6 +2,7 @@
 name = "ip7z"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [lib]
 name = "ip7z"
