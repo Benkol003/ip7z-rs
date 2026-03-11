@@ -23,8 +23,6 @@ pub const fn handler_clsid(id: u8) -> GUID {
     //{23170F69-40C1-278A-1000-00 01 10 xx 00 00}
     GUID {data1: 0x23170F69, data2: 0x40C1, data3: 0x278A, data4: [0x10,0x00,0x00,0x01,0x10,id,0x00,0x00]}
 }
-
-#[link(name="7z",kind="dylib")]
 unsafe extern "C" {
     pub fn CreateDecoder(index: u32, iid: *const GUID,out_object: *mut*mut c_void) -> HRESULT;
     pub fn CreateEncoder(index: i32, iid: *const GUID,out_object: *mut*mut c_void) -> HRESULT;
@@ -169,7 +167,7 @@ com::interfaces!{
     pub unsafe interface IHashers: IUnknown {
         fn GetNumHashers(&self) -> u32;
         fn GetHasherProp(&self,index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        fn CreateHasher(&self, index: u32, hasher: *mut*mut IHasher) -> HRESULT; //TODO should this be 
+        fn CreateHasher(&self, index: u32, hasher: *mut IHasher) -> HRESULT;
     }
     ///////////////////////////////////////
 }

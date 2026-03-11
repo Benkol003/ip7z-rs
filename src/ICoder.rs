@@ -1,12 +1,10 @@
-use crate::ffi::{PROPID,Z7IGroups,wchar};
-use std::cell::{Cell, RefCell};
-use std::default;
-use std::ffi::{c_ulong, c_void};
-use bitflags::bitflags;
+use crate::ffi::{PROPID,Z7IGroups};
+use std::cell::Cell;
+use std::ffi::c_void;
 use com::AbiTransferable;
 use com::sys::GUID;
 use com::interfaces::IUnknown;
-use crate::win_ffi::{BSTR, FILETIME, HRESULT, PROPVARIANT, VARTYPE};
+use crate::win_ffi::{HRESULT, PROPVARIANT};
 
 use crate::IStream::*;
 
@@ -105,21 +103,21 @@ com::interfaces! {
     #[uuid(Z7IGroups::ICoder.iface_iid(0x5))]
     pub unsafe interface ICompressCoder: IUnknown {
         pub fn Code(&self, 
-            in_stream: *mut ISequentialInStream, 
-            out_stream: *mut ISequentialOutStream,
+            in_stream: ISequentialInStream, 
+            out_stream: ISequentialOutStream,
             in_size: *const u64,
             out_size: *const u64,
-            progress: *mut ICompressProgressInfo
+            progress: ICompressProgressInfo
         ) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x18))]
     pub unsafe interface ICompressCoder2: IUnknown {
         pub fn Code(&self, 
-            in_streams: *const*mut ISequentialInStream,
+            in_streams: *const ISequentialInStream,
             in_sizes: *const*const u64,
             num_in_streams: u32,
-            out_streams: *const*mut ISequentialOutStream,
+            out_streams: *const ISequentialOutStream,
             out_sizes: *const*const u64,
             num_out_streams: u32
         ) -> HRESULT;
@@ -144,7 +142,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x23))]
     pub unsafe interface ICompressWriteCoderProperties: IUnknown {
-        pub fn WriteCoderProperties(&self, out_stream: *mut ISequentialOutStream) -> HRESULT;
+        pub fn WriteCoderProperties(&self, out_stream: ISequentialOutStream) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x24))]
@@ -174,7 +172,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x29))]
     pub unsafe interface ICompressReadUnusedFromInBuf: IUnknown {
-        pub fn ReadUnusedFromInBuf(&self, data: *mut c_void, size: u32, processed_size: *mut u32) -> HRESULT;
+        pub fn ReadUnusedFromInBuf(&self, data: *mut u8, size: u32, processed_size: *mut u32) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x30))]
@@ -184,13 +182,13 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x31))]
     pub unsafe interface ICompressSetInStream: IUnknown {
-        pub fn SetOutStream(&self, in_stream: *mut ISequentialInStream) -> HRESULT;
+        pub fn SetOutStream(&self, in_stream: ISequentialInStream) -> HRESULT;
         pub fn ReleaseInStream(&self) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x32))]
     pub unsafe interface ICompressSetOutStream: IUnknown {
-        pub fn SetOutStream(&self, out_stream: *mut ISequentialOutStream) -> HRESULT;
+        pub fn SetOutStream(&self, out_stream: ISequentialOutStream) -> HRESULT;
         pub fn ReleaseOutStream(&self) -> HRESULT;
     }
 
@@ -212,7 +210,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x37))]
     pub unsafe interface ICompressSetInStream2: IUnknown {
-        pub fn SetInStream2(&self, stream_index: u32, in_stream: *mut ISequentialInStream) -> HRESULT;
+        pub fn SetInStream2(&self, stream_index: u32, in_stream: ISequentialInStream) -> HRESULT;
         pub fn ReleaseInStream2(&self, stream_index: u32) -> HRESULT;
     }
 
@@ -232,7 +230,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x61))]
     pub unsafe interface ISetCompressCodecsInfo: IUnknown {
-        pub fn SetCompressCodecsInfo(&self, compress_codecs_info: *mut ICompressCodecsInfo) -> HRESULT;
+        pub fn SetCompressCodecsInfo(&self, compress_codecs_info: ICompressCodecsInfo) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x80))]
@@ -259,7 +257,7 @@ com::interfaces! {
     #[uuid(Z7IGroups::ICoder.iface_iid(0xC0))]
     pub unsafe interface IHasher: IUnknown {
         pub fn Init(&self);
-        pub fn Update(&self, data: *const c_void, size: u32);
+        pub fn Update(&self, data: *const u8, size: u32);
         pub fn Final(&self, digest: *mut u8);
         pub fn GetDigestSize(&self) -> u32;
     }
@@ -268,7 +266,7 @@ com::interfaces! {
     pub unsafe interface IHashers: IUnknown {
         pub fn GetNumHashers(&self) -> u32;
         pub fn GetHasherProp(&self, index: u32, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn CreateHasher(&self, index: u32, hasher: *mut*mut IHasher) -> HRESULT;
+        pub fn CreateHasher(&self, index: u32, hasher: *mut IHasher) -> HRESULT;
     }
 }
 

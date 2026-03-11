@@ -1,6 +1,5 @@
-use std::{default, mem::{ManuallyDrop, MaybeUninit}};
+use std::mem::ManuallyDrop;
 
-use com::{Interface, interfaces::IUnknown};
 
 use crate::{ffi::{PROPID, wchar}, win_ffi::{BSTR, FILETIME, HRESULT}};
 

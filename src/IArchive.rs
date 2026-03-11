@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::ffi::{PROPID,Z7IGroups,wchar};
-use crate::win_ffi::{PROPVARIANT,FILETIME,BSTR,VARTYPE,HRESULT};
+use crate::win_ffi::{PROPVARIANT,BSTR,VARTYPE,HRESULT};
 
 use bitflags::bitflags;
 use com::interfaces::IUnknown;
@@ -17,7 +17,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x20))]
     pub unsafe interface IArchiveExtractCallback: IProgress {
-        pub fn GetStream(&self, index: u32, out_stream: *mut*mut ISequentialOutStream, ask_extract_mode: i32) -> HRESULT;
+        pub fn GetStream(&self, index: u32, out_stream: *mut ISequentialOutStream, ask_extract_mode: i32) -> HRESULT;
         pub fn PrepareOperation(&self, ask_extract_mode: i32) -> HRESULT;
         pub fn SetOperationResult(&self, op_res: i32) -> HRESULT;
     }
@@ -30,12 +30,12 @@ com::interfaces! {
     #[uuid(Z7IGroups::IArchive.iface_iid(0x30))]
     pub unsafe interface IArchiveOpenVolumeCallback: IUnknown {
         pub fn GetProperty(&self,prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn GetStream(&self, name: *const wchar, stream: *mut*mut IInStream) -> HRESULT;
+        pub fn GetStream(&self, name: *const wchar, stream: *mut IInStream) -> HRESULT;
     } 
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x40))]
     pub unsafe interface IInArchiveGetStream: IUnknown {
-        pub fn GetStream(&self, index: u32, stream: *mut*mut IInStream) -> HRESULT;
+        pub fn GetStream(&self, index: u32, stream: *mut IInStream) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x50))]
@@ -45,11 +45,11 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x60))]
     pub unsafe interface IInArchive: IUnknown {
-        pub fn Open(&self, stream: *mut IInStream, max_check_start_pos: *const u64, open_callback: *mut IArchiveOpenCallback) -> HRESULT;
+        pub fn Open(&self, stream: IInStream, max_check_start_pos: *const u64, open_callback: IArchiveOpenCallback) -> HRESULT;
         pub fn Close(&self) -> HRESULT;
         pub fn GetNumberOfItems(&self, num_items: *mut u32) -> HRESULT;
         pub fn GetProperty(&self, index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: i32, extract_callback: *mut IArchiveExtractCallback) -> HRESULT;
+        pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: i32, extract_callback: IArchiveExtractCallback) -> HRESULT;
         pub fn GetArchiveProperty(&self, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
         pub fn GetNumberOfProperties(&self, num_props: *mut u32) -> HRESULT;
         pub fn GetPropertyInfo(&self, index: u32, name: *mut BSTR, prop_id: *mut PROPID, var_type: *mut VARTYPE) -> HRESULT;
@@ -59,10 +59,10 @@ com::interfaces! {
 
     // #[uuid(Z7IGroups::IArchive.iface_guid(0x70))]
     // #[uuid(Z7IGroups::IArchive.iface_guid(0x71))]
-    
+
     #[uuid(Z7IGroups::IArchive.iface_iid(0x61))]
     pub unsafe interface IArchiveOpenSeq: IUnknown {
-        pub fn OpenSeq(&self, stream: *mut ISequentialInStream) -> HRESULT;
+        pub fn OpenSeq(&self, stream: ISequentialInStream) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x80))]
@@ -71,19 +71,19 @@ com::interfaces! {
     pub unsafe interface IArchiveUpdateCallback: IProgress {
         pub fn GetUpdateItemInfo(&self,index: u32, new_data: *mut i32, new_props: *mut i32, index_in_archive: *mut u32) -> HRESULT;
         pub fn GetProperty(&self, index: u32, prop_id: PROPID,value: *mut PROPVARIANT) -> HRESULT;
-        pub fn GetStream(&self, index: u32, in_stream: *mut*mut ISequentialInStream) -> HRESULT;
+        pub fn GetStream(&self, index: u32, in_stream: *mut ISequentialInStream) -> HRESULT;
         pub fn SetOperationResult(&self, op_res: i32) -> HRESULT;
     }
     
     #[uuid(Z7IGroups::IArchive.iface_iid(0x82))]
     pub unsafe interface IArchiveUpdateCallback2: IProgress {
         pub fn GetVolumeSize(&self, index: u32, size: *mut u64) -> HRESULT;
-        pub fn GetVolumeStream(&self, index: u32, volume_stream: *mut*mut ISequentialOutStream) -> HRESULT;
+        pub fn GetVolumeStream(&self, index: u32, volume_stream: *mut ISequentialOutStream) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x83))]
     pub unsafe interface IArchiveUpdateCallbackFile: IArchiveUpdateCallback {
-        pub fn GetStream2(&self, index: u32, in_stream: *mut*mut ISequentialInStream, notify_op: NUpdateNotifyOp) -> HRESULT;
+        pub fn GetStream2(&self, index: u32, in_stream: *mut ISequentialInStream, notify_op: NUpdateNotifyOp) -> HRESULT;
         pub fn ReportOperation(&self, index_type: u32, index: u32, notify_op: NUpdateNotifyOp) -> HRESULT;
     }
 
@@ -94,7 +94,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0xA0))]
     pub unsafe interface IOutArchive: IUnknown {
-        pub fn UpdateItems(&self, out_stream: *mut ISequentialOutStream, num_items: u32, update_callback: *mut IArchiveUpdateCallback) -> HRESULT;
+        pub fn UpdateItems(&self, out_stream: ISequentialOutStream, num_items: u32, update_callback: IArchiveUpdateCallback) -> HRESULT;
         pub fn GetFileTimeType(&self, time_type: *mut NFileTimeType) -> HRESULT;
     }
 
@@ -280,12 +280,13 @@ pub struct OpenStatus {
 }
 
 com::class! {
-    pub class ArchiveOpenCallback: IArchiveOpenCallback {
+    pub class ArchiveOpenCallback: IArchiveOpenCallback { //TODO: can also optionally implement ICryptoGetTextPassword
         status: Cell<OpenStatus>
     }
 
     impl IArchiveOpenCallback for ArchiveOpenCallback {
         pub fn SetTotal(&self, files: *const u64, bytes: *const u64) -> HRESULT {
+            println!("IArchiveOpenCallback::SetTotal");
             unsafe {
                 let mut status = self.status.get();
                 if !bytes.is_null() {
@@ -299,6 +300,7 @@ com::class! {
             }
         }
         pub fn SetCompleted(&self, files: *const u64, bytes: *const u64) -> HRESULT {
+            println!("IArchiveOpenCallback::SetCompleted");
             unsafe {
                 let mut status = self.status.get();
                 if !bytes.is_null() {
@@ -313,3 +315,17 @@ com::class! {
         }
     }
 }
+
+// com::class!{
+//     pub class ArchiveExtractCallback: IArchiveExtractCallback(IProgress), IProgress {
+//         progress: RefCell<Progress>
+//     }
+
+//     impl IProgress for ArchiveExtractCallback {
+
+//     }
+
+//     impl IArchiveExtractCallback for ArchiveExtractCallback {
+        
+//     }
+// }

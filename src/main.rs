@@ -1,12 +1,11 @@
 use std::cell::Cell;
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use com::Interface;
-use ip7z::IArchive::{self, ArchiveOpenCallback, ArchiveOpenCallbackClassFactory, IArchiveOpenCallback, IInArchive, NHandlerPropID, OpenStatus};
-use ip7z::IStream::{FileInStream, FileInStreamClassFactory, IInStream, ISequentialInStream};
-use ip7z::ffi::{PROPID, Z7Formats, handler_clsid};
-use ip7z::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE};
+use ip7z::IArchive::{ArchiveOpenCallback, IArchiveOpenCallback, IInArchive, NHandlerPropID, OpenStatus};
+use ip7z::IStream::{FileInStream, IInStream};
+use ip7z::ffi::{PROPID, Z7Formats};
+use ip7z::win_ffi::{BSTR, HRESULT, PROPVARIANT, VARTYPE};
 fn main() -> Result<(), Box<dyn Error>>{
     unsafe {
     let r = ip7z::ffi::CreateInterface::<IInArchive>(Z7Formats::Lzma.handler_clsid());
@@ -34,14 +33,15 @@ fn main() -> Result<(), Box<dyn Error>>{
     }
     let open_cbk = ArchiveOpenCallback::allocate(Cell::new(OpenStatus::default()));
     let max_check_start_pos = 0;
-    //access violation...
     in_archive.Open(
-        in_fstream.query_interface::<IInStream>().ok_or(HRESULT::E_NOINTERFACE)?.as_raw().as_ptr() as *mut _, 
+        in_fstream.query_interface::<IInStream>().ok_or(HRESULT::E_NOINTERFACE)?, 
         &max_check_start_pos, 
-        open_cbk.query_interface::<IArchiveOpenCallback>().ok_or(HRESULT::E_NOINTERFACE)?.as_raw().as_ptr() as *mut _).ok()?;
+        open_cbk.query_interface::<IArchiveOpenCallback>().ok_or(HRESULT::E_NOINTERFACE)?
+        ).ok()?;
 
     let mut num_items: u32 = 0;
     in_archive.GetNumberOfItems(&mut num_items).ok()?;
+
     println!("num items: {num_items}");
 
     println!("exiting main...");

@@ -1,6 +1,6 @@
 use crate::{ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
-use std::{cell::RefCell, ffi::{c_ulong, c_void}, fs::File, io::{Read, Seek, SeekFrom, Write}, panic::RefUnwindSafe};
-use com::{AbiTransferable, ClassAllocation, sys::GUID};
+use std::{cell::RefCell, fs::File, io::{Read, Seek, SeekFrom, Write}};
+use com::ClassAllocation;
 use com::interfaces::IUnknown;
 use strum_macros::FromRepr;
 use crate::win_ffi::{PROPVARIANT, FILETIME, HRESULT};
@@ -104,11 +104,8 @@ com::interfaces! {
      }
 }
 
-fn Seek(file: &Option<RefCell<File>>,offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
-    let mut file = match file {
-        None => return HRESULT::E_FAIL,
-        Some(f) => f.borrow_mut()
-    };
+fn Seek(file: &RefCell<File>,offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
+    let mut file = file.borrow_mut();
     let seek = match STREAM_SEEK::try_from(seek_origin) {
         Err(e) => return e,
         Ok(v) => v
@@ -119,7 +116,7 @@ fn Seek(file: &Option<RefCell<File>>,offset: i64, seek_origin: u32, new_position
     };
     unsafe {
         *new_position = match file.seek(seek_offset) {
-            Err(e) => return HRESULT::E_FAIL,
+            Err(_e) => return HRESULT::E_FAIL,
             Ok(v) => v
         };
     }
@@ -128,32 +125,31 @@ fn Seek(file: &Option<RefCell<File>>,offset: i64, seek_origin: u32, new_position
 
 
 com::class!{
+
+    #[no_class_factory]
     pub class FileInStream: IInStream(ISequentialInStream), ISequentialInStream {
-        file: Option<RefCell<std::fs::File>>
+        file: RefCell<std::fs::File>
     }
 
     impl ISequentialInStream for FileInStream {
         pub fn Read(&self,data: *mut u8,size: u32, processed_size: *mut u32) -> HRESULT {
-            match &self.file {
-                None => HRESULT::E_FAIL,
-                Some(f) => {
-                    let mut file = f.borrow_mut();
-                    let buf: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(data,size as usize) };
-                    let r = file.read(buf);
-                    match r {
-                        Ok(s) => {
-                            unsafe {*processed_size = s as u32};
-                            HRESULT::S_OK
-                        }
-                        Err(_) => HRESULT::E_FAIL
-                    }
+            println!("ISequentialInStream::Read - size: {}",size);
+            let mut file = self.file.borrow_mut();
+            let buf: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(data,size as usize) };
+            let r = file.read(buf);
+            match r {
+                Ok(s) => {
+                    unsafe {*processed_size = s as u32};
+                    HRESULT::S_OK
                 }
+                Err(_) => HRESULT::E_FAIL
             }
         }
     }
 
     impl IInStream for FileInStream {
         fn Seek(&self, offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
+            println!("IInStream::Seek");
             Seek(&self.file,offset,seek_origin,new_position)
         }
     }
@@ -164,14 +160,14 @@ impl FileInStream {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .open(path)?;
-        let file = Some(RefCell::new(file)); 
-        Ok(Self::allocate(file))
+        Ok(Self::allocate(RefCell::new(file)))
     }
 }
 
 com::class! {
+    #[no_class_factory]
     pub class FileOutStream: IOutStream(ISequentialOutStream), ISequentialOutStream {
-        file: Option<RefCell<std::fs::File>>
+        file: RefCell<std::fs::File>
     }
 
     impl IOutStream for FileOutStream {
@@ -179,12 +175,8 @@ com::class! {
             Seek(&self.file,offset,seek_origin,new_position)
         }
         fn SetSize(&self, new_size: u64) -> HRESULT {
-            let file = match &self.file {
-                None => return HRESULT::E_FAIL,
-                Some(v) => v
-            };
-            match file.borrow_mut().set_len(new_size) {
-                Err(e) => HRESULT::E_FAIL,
+            match self.file.borrow_mut().set_len(new_size) {
+                Err(_) => HRESULT::E_FAIL,
                 Ok(()) => HRESULT::S_OK
             }
         }
@@ -192,21 +184,16 @@ com::class! {
 
     impl ISequentialOutStream for FileOutStream {
         pub fn Write(&self, data: *const u8,size: u32, processed_size: *mut u32) -> HRESULT {
-            match &self.file {
-                None => HRESULT::E_FAIL,
-                Some(f) => {
-                    let mut file = f.borrow_mut();
-                    let buf: &[u8] = unsafe { std::slice::from_raw_parts(data,size as usize) };
-                    let r = file.write(buf);
-                    match r {
-                        Ok(s) => {
-                            unsafe {*processed_size = s as u32};
-                            HRESULT::S_OK
-                        }
-                        Err(_) => HRESULT::E_FAIL
-                    }
+            let mut file = self.file.borrow_mut();
+            let buf: &[u8] = unsafe { std::slice::from_raw_parts(data,size as usize) };
+            let r = file.write(buf);
+            match r {
+                Ok(s) => {
+                    unsafe {*processed_size = s as u32};
+                    HRESULT::S_OK
                 }
-            } 
+                Err(_) => HRESULT::E_FAIL
+            }
         }
     }
 }
