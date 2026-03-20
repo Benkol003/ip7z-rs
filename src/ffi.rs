@@ -1,4 +1,4 @@
-use std::ffi::{c_ulong, c_void};
+use std::{error::Error, ffi::c_void, path::PathBuf};
 
 use com::Interface;
 use com::sys::GUID;
@@ -6,10 +6,12 @@ use com::interfaces::IUnknown;
 
 use crate::win_ffi::{PROPVARIANT,HRESULT, HrResult};
 
-pub type PROPID = c_ulong;
+pub type PROPID = u32;
+
+//7zip typedefs stuff e.g. ULONG to u32 on linux so it matches window's definitions for unsigned long and not 64-bit
 
 #[allow(non_camel_case_types)]
-pub type wchar = i32;
+pub type wchar = u16;
 
 /*
 given e.g. in c++ ISequentialInStream * const *inStreams:
@@ -19,29 +21,172 @@ and also there isnt a use case for this pointer to change
 TODO do this across all pointer FFI defs
 */
 
+
+#[cfg(feature = "dynamic")]
+macro_rules! lib_dynamic {
+    ($struct_name:ident, $( $(#[$attr:meta])* fn $name:ident ( $($arg:ident : $arg_ty:ty),* ) -> $ret:ty );* $(;)?) => {
+
+        pub struct $struct_name {
+            _lib: libloading::Library,
+            $( pub $name: unsafe extern "C" fn($($arg_ty),*) -> $ret, )*
+        }
+
+        impl $struct_name {
+            $(
+                $(#[$attr])*
+                pub unsafe fn $name(&self, $($arg: $arg_ty),*) -> $ret {
+                    unsafe { (self.$name)($($arg),*) }
+                }
+            )*
+
+            fn load(lib: libloading::Library) -> Result<Self,libloading::Error> {
+                unsafe {
+                    Ok(Self {
+                        $(
+                            $name: *lib.get(stringify!($name))?,
+                        )*
+                        _lib: lib
+                    })
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "static")]
+macro_rules! lib_static {
+    ($struct_name:ident, $( $(#[$attr:meta])* fn $name:ident ( $($arg:ident : $arg_ty:ty),* ) -> $ret:ty );* $(;)?) => {
+        pub struct $struct_name {
+            $(pub $name: fn( $( $arg: $arg_ty ),* ) -> $ret, )*
+        }
+
+        impl $struct_name {
+            $( 
+                $(#[$attr])*
+                pub unsafe fn $name(&self, $( $arg: $arg_ty ),* ) -> $ret {
+                    (self.$name)( $( $arg ),* )
+                }
+            )*
+        }
+
+        unsafe extern "C" {
+            $(
+                fn $name( $( $arg: $arg_ty ),* ) -> $ret;
+            )*
+        } 
+    }
+}
+
+#[cfg(feature = "static")]
+macro_rules! lib {
+    ($($tt:tt)*) => {
+        lib_static!($tt)
+    }
+}
+
+#[cfg(feature = "dynamic")]
+macro_rules! lib {
+    ($($tt:tt)*) => {
+        lib_dynamic!{$($tt)*}
+    }
+}
+
+lib!(
+    Z7,
+    fn CreateDecoder(index: u32, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
+    fn CreateEncoder(index: i32, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
+    fn CreateObject(clsid: *const GUID, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
+    #[deprecated]
+    fn GetHandlerProperty(propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
+    fn GetHandlerProperty2(index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
+    fn SetLargePageMode() -> HRESULT;
+);
+
+
+
 pub const fn handler_clsid(id: u8) -> GUID {
     //{23170F69-40C1-278A-1000-00 01 10 xx 00 00}
     GUID {data1: 0x23170F69, data2: 0x40C1, data3: 0x278A, data4: [0x10,0x00,0x00,0x01,0x10,id,0x00,0x00]}
 }
-unsafe extern "C" {
-    pub fn CreateDecoder(index: u32, iid: *const GUID,out_object: *mut*mut c_void) -> HRESULT;
-    pub fn CreateEncoder(index: i32, iid: *const GUID,out_object: *mut*mut c_void) -> HRESULT;
-    pub fn CreateObject(clsid: *const GUID, iid: *const GUID, out_object: *mut*mut c_void) -> HRESULT;
-    pub fn GethandlerProperty(propid: PROPID,value: *mut PROPVARIANT) -> HRESULT; //deprecated?
-    pub fn GetHandlerProperty2(index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-    pub fn  SetLargePageMode() -> HRESULT;
-}
 
-pub fn CreateInterface<I: Interface>(clsid: GUID) -> HrResult<I> {
-    unsafe {
-        let mut object: *mut c_void = std::ptr::null_mut();
-        let r: HRESULT = CreateObject(&clsid, &I::IID, &mut object);
-        if r.succeeded() {
-            Ok(std::ptr::read(&object as *const*mut c_void as *mut I)) //do i need read_unaligned?
-        } else {
-            Err(r)
+impl Z7 {
+    pub fn CreateInterface<I: Interface>(&self, clsid: GUID) -> HrResult<I> {
+        unsafe {
+            let mut object: *mut c_void = std::ptr::null_mut();
+            let r: HRESULT = (self.CreateObject)(&clsid, &I::IID, &mut object);
+            if r.succeeded() {
+                Ok(std::ptr::read(&object as *const*mut c_void as *mut I)) //do i need read_unaligned?
+            } else {
+                Err(r)
+            }
         }
     }
+
+    #[cfg(all(feature = "dynamic",target_os = "windows"))]
+    fn find_7z() -> Result<PathBuf, Box<dyn Error>> {
+        use winreg::{RegKey, enums::HKEY_LOCAL_MACHINE};
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let z7reg = hklm.open_subkey("SOFTWARE\\7-zip").unwrap();
+        let path = PathBuf::from(z7reg.get_value::<String,_>("path")?).join("7z.dll");
+        if !path.exists() {
+            return Err(format!("7zip is installed but could not find 7z.dll at {}",path.display()).into());
+        }
+        Ok(path)
+    }
+
+    #[cfg(all(feature = "dynamic",any(target_os = "linux", target_os = "macos")))]
+    fn find_7z() -> Result<PathBuf,Box<dyn Error>>{
+        #[cfg(target_os = "linux")]
+        let candidates = [
+            "/usr/lib/7zip/", //arch: 7zip
+            "/usr/libexec/7zip/", //fedora: 7zip
+            "/usr/lib/p7zip/", //ubuntu/debian: p7zip-full
+            ];
+
+        #[cfg(target_os = "linux")]
+        let errmsg ="could not find 7z.so, please install 7zip or p7zip via your package manager e.g.:\n\
+            - sudo apt install p7zip-full\n\
+            - sudo dnf install 7zip\n\
+            - sudo pacman -S 7zip";
+
+        #[cfg(target_os = "macos")]
+        let candidates = ["/usr/local/lib/"]; //brew install sevenzip
+
+        #[cfg(target_os = "macos")]
+        let errmsg  = "could not find 7z.so, please install 7zip:\n\
+        - brew install sevenzip";
+
+
+        let path = candidates.iter()
+            .map(|p| std::path::Path::new(p).join("7z.so"))
+            .find(|p| p.exists())
+            .ok_or(errmsg)?;
+
+        Ok(PathBuf::from(path))
+    }
+
+    #[cfg(feature = "dynamic")]
+    pub fn new() -> Result<Self,Box<dyn Error>> {
+        unsafe {
+            let lib = libloading::Library::new(Self::find_7z()?)?;
+            let sself = Self::load(lib)?;
+            sself.SetLargePageMode();
+            Ok(sself)
+        }
+    }
+
+    #[cfg(all(feature = "static"))]
+    pub fn new() -> Result<Self,Box<dyn Error>> {
+        Self {
+            CreateEncoder : CreateEncoder,
+            CreateDecoder : CreateDecoder,
+            CreateObject: CreateObject,
+            GetHandlerProperty: GethandlerProperty,
+            GetHandlerProperty2: GetHandlerProperty2,
+            SetLargePageMode: SetLargePageMode
+        }
+    }
+
 }
 
 //for {23170F69-40C1-278A-0000-00yy00xx0000}

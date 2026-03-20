@@ -3,7 +3,6 @@ use strum_macros::Display;
 
 pub type HrResult<T> = Result<T,HRESULT>;
 
-
 /// 7-zip uses the following subset of HRESULT error codes.
 #[allow(non_camel_case_types)]
 
@@ -23,6 +22,7 @@ pub enum HRESULT {
     CLASS_E_CLASSNOTAVAILABLE   = 0x80040111,
     E_OUTOFMEMORY               = 0x8007000E,
     E_INVALIDARG                = 0x80070057,
+    TYPE_E_MISMATCH             = 0x80028CA0,
 
 }
 

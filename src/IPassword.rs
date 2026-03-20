@@ -1,6 +1,6 @@
-use crate::ffi::Z7IGroups;
 use com::sys::HRESULT;
 use com::interfaces::IUnknown;
+use crate::ffi::Z7IGroups;
 use crate::win_ffi::BSTR;
 
 com::interfaces! {

@@ -14,7 +14,7 @@ use crate::IStream::*;
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
 #[repr(u32)]
-pub enum NCoderPropID {
+pub enum CoderPropID {
     kDefaultProp = 0,
     kDictionarySize,    // VT_UI4
     kUsedMemorySize,    // VT_UI4
@@ -51,7 +51,7 @@ pub enum NCoderPropID {
     kAffinityInGroup,   // VT_UI8
 }
 
-unsafe impl AbiTransferable for NCoderPropID {
+unsafe impl AbiTransferable for CoderPropID {
     type Abi = u32;
     fn get_abi(&self) -> Self::Abi {
         self.clone() as u32
@@ -63,7 +63,7 @@ unsafe impl AbiTransferable for NCoderPropID {
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
 #[repr(u32)]
-pub enum NMethodPropID {
+pub enum MethodPropID {
     kID,
     kName,
     kDecoder,
@@ -78,7 +78,7 @@ pub enum NMethodPropID {
 }
 
 //TODO make this derivable
-unsafe impl AbiTransferable for NMethodPropID {
+unsafe impl AbiTransferable for MethodPropID {
     type Abi = u32;
     fn get_abi(&self) -> Self::Abi {
         self.clone() as u32
@@ -89,7 +89,7 @@ unsafe impl AbiTransferable for NMethodPropID {
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NModulePropID {
+pub enum ModulePropID {
     kInterfaceType,   // VT_UI4
     kVersion          // VT_UI4    
 }
@@ -125,13 +125,13 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x1F))]
     pub unsafe interface ICompressSetCoderPropertiesOpt: IUnknown {
-        pub fn SetCoderPropertiesOpt(&self, prop_ids: *const NCoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
+        pub fn SetCoderPropertiesOpt(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
     }
 
     //difference between this and CoderPropertiesOpt?
     #[uuid(Z7IGroups::ICoder.iface_iid(0x20))]
     pub unsafe interface ICompressSetCoderProperties: IUnknown {
-        pub fn SetCoderProperties(&self, prop_ids: *const NCoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
+        pub fn SetCoderProperties(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
     }
 
     //TODO what is the array...
@@ -223,7 +223,7 @@ com::interfaces! {
     #[uuid(Z7IGroups::ICoder.iface_iid(0x60))]
     pub unsafe interface ICompressCodecsInfo: IUnknown {
         pub fn GetNumMethods(&self, num_methods: *mut u32) -> HRESULT;
-        pub fn GetProperty(&self, index: u32, prop_id: NMethodPropID, value: *mut PROPVARIANT) -> HRESULT;
+        pub fn GetProperty(&self, index: u32, prop_id: MethodPropID, value: *mut PROPVARIANT) -> HRESULT;
         pub fn CreateDecoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
         pub fn CreateEncoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
     }

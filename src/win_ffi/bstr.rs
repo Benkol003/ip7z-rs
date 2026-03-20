@@ -1,10 +1,8 @@
 //adapted from winsafe's implementation of BSTR.
 
 use std::{alloc::Layout,str::EncodeUtf16};
-
 use widestring::U16Str;
-
-use crate::win_ffi::{HRESULT,HrResult};
+use crate::{ffi::wchar, win_ffi::{HRESULT,HrResult}};
 
 /// A
 /// [string data type](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/automat/bstr)
@@ -19,7 +17,7 @@ pub struct BSTR(*mut u16);
 impl Drop for BSTR {
 	fn drop(&mut self) {
 		if !self.0.is_null() {
-			self.SysFreeString();
+			self.free();
 		}
 	}
 }
@@ -42,6 +40,22 @@ impl std::fmt::Debug for BSTR {
 	}
 }
 
+impl TryFrom<&str> for BSTR {
+	type Error = HRESULT;
+
+	fn try_from(value: &str) -> Result<Self, Self::Error> {
+		Self::alloc_string(value.as_ref())
+	}
+}
+
+impl From<&BSTR> for String {
+    fn from(value: &BSTR) -> String {
+        String::from_utf16_lossy(unsafe {
+            std::slice::from_raw_parts(value.as_ptr(), value.SysStringLen() as usize)
+        })
+    }
+}
+
 impl BSTR {
 
 	fn real_ptr_mut(&mut self) -> *mut u16 {
@@ -52,7 +66,7 @@ impl BSTR {
 		unsafe { self.0.byte_offset(-4) }
 	}
 
-
+	#[cfg(not(windows))]
 	fn layout(wchars: usize) -> HrResult<Layout> {
 		match Layout::from_size_align((wchars*2) + 4 + 2, 4) {
 			Ok(l) => Ok(l),
@@ -60,6 +74,7 @@ impl BSTR {
 		}
 	}
 
+	#[cfg(not(windows))]
 	unsafe fn copy_from( se: EncodeUtf16, wchars: u32, ptr: *mut u16) {
 		unsafe {
 			let bstr_sz = ptr as *mut u32;
@@ -73,7 +88,8 @@ impl BSTR {
 		}
 	}
 
-	pub fn SysFreeString(&mut self) {
+	#[cfg(not(windows))]
+	fn free(&mut self) {
 		unsafe {
 			let ptr = self.real_ptr_mut();
 			std::alloc::dealloc(ptr as *mut u8, Self::layout(*ptr as usize).unwrap());
@@ -81,15 +97,19 @@ impl BSTR {
 		}
 	}
 
-	/// [`SysAllocString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysallocstring)
-	/// function.
-	#[must_use]
-	pub fn SysAllocString(s: &str) -> HrResult<Self> {
+	#[cfg(windows)]
+	fn free(&mut self) {
+		unsafe {
+			SysFreeString(self.0);
+			self.0 = std::ptr::null_mut();
+		}
+	}
+
+	#[cfg(not(windows))]
+	pub fn alloc_string(s: &str) -> HrResult<Self> {
 		unsafe {
 			let wchars = s.encode_utf16().count();
-
 			let ptr = std::alloc::alloc(Self::layout(wchars)?) as *mut u16;
-
 			if ptr.is_null() { 
 				Err(HRESULT::E_OUTOFMEMORY) 
 			} else {
@@ -99,25 +119,20 @@ impl BSTR {
 		}
 	}
 
-	/// [`SysReAllocString`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysreallocstring)
-	/// function.
-	///
-	/// The underlying pointer is automatically updated.
-	pub fn SysReAllocString(&mut self, s: &str) -> HrResult<()> {
-		unsafe {
-			let wchars = s.encode_utf16().count();
-
-			let old_ptr = self.real_ptr_mut() as *mut u32;
-
-			let ptr = std::alloc::realloc(old_ptr as *mut u8, Self::layout(*old_ptr as usize)?, wchars * 2) as *mut u16;
-			if ptr.is_null() {
-				Err(HRESULT::E_OUTOFMEMORY)
-			} else {
-				Self::copy_from(s.encode_utf16(),wchars as u32,ptr);
-				self.0 = ptr.byte_offset(4);
-				Ok(())
-			}
+	#[cfg(windows)]
+	pub fn alloc_string(s: &str) -> HrResult<Self> {
+		let wchars: Vec<wchar> = s.encode_utf16().collect();
+		if wchars.len() > u32::MAX as usize {
+			return Err(HRESULT::E_INVALIDARG);
 		}
+
+		let ptr = unsafe {
+			SysAllocStringLen(wchars.as_ptr(),wchars.len() as u32)
+		};
+		if ptr.is_null() {
+			return Err(HRESULT::E_OUTOFMEMORY);
+		}
+		Ok(Self(ptr))
 	}
 
 	/// [`SysStringLen`](https://learn.microsoft.com/en-us/windows/win32/api/oleauto/nf-oleauto-sysstringlen)
@@ -128,7 +143,7 @@ impl BSTR {
 			match self.0.is_null() {
 				true => 0,
 				false => {
-					*self.real_ptr() as u32
+					(*self.real_ptr() as u32) /2
 				}
 			} 
 		}
@@ -171,7 +186,7 @@ impl BSTR {
 			if len==0 {
 				&[]
 			} else {
-				std::slice::from_raw_parts(self.0, self.SysStringLen() as usize + 2)
+				std::slice::from_raw_parts(self.0, self.SysStringLen() as usize + 1)
 			}
 		}
 	}
@@ -188,4 +203,13 @@ impl BSTR {
 	pub const fn leak(&mut self) -> *mut u16 {
 		std::mem::replace(&mut self.0, std::ptr::null_mut())
 	}
+}
+
+//it looks like SysAllocString/SysFreeString dont use malloc/free, maybe using CoTaskMemAlloc 
+//for 7zip on windows we must then use SysFreeString for BSTR's passed across the ffi 
+#[cfg(windows)]
+#[link(name="OleAut32",kind="dylib")]
+unsafe extern "C" {
+	fn SysAllocStringLen(psz: *const wchar, len: u32) -> *mut u16;
+	fn SysFreeString(psz: *const wchar);
 }

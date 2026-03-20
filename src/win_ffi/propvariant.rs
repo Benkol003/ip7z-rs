@@ -1,6 +1,4 @@
 use std::mem::ManuallyDrop;
-
-
 use crate::{ffi::{PROPID, wchar}, win_ffi::{BSTR, FILETIME, HRESULT}};
 
 #[allow(non_camel_case_types)]
@@ -39,21 +37,21 @@ pub struct PROPVARIANT {
 
 #[repr(C)]
 pub union PROPVARIANT_union {
-	pub(crate) cVal: i8,
-	pub(crate) bVal: u8,
-	pub(crate) iVal: i16,
-	pub(crate) uiVal: u16, //also VARIANT_BOOL
-	pub(crate) lVal: i32,
-	pub(crate) ulVal: u32,
-	pub(crate) hVal: i64,
-	pub(crate) uhVal: u64,
-	pub(crate) fltVal: f32,
-	pub(crate) dblVal: f64,
-    pub(crate) boolVal: VT_BOOL,
-    pub(crate) scode: HRESULT,
-    pub(crate) filetime: FILETIME,
-    pub(crate) bstrVal: ManuallyDrop<BSTR>,
-    pub(crate) ptr: *mut std::ffi::c_void, // for all pointer fields
+	pub cVal: i8,
+	pub bVal: u8,
+	pub iVal: i16,
+	pub uiVal: u16, //also VARIANT_BOOL
+	pub lVal: i32,
+	pub ulVal: u32,
+	pub hVal: i64,
+	pub uhVal: u64,
+	pub fltVal: f32,
+	pub dblVal: f64,
+    pub boolVal: VT_BOOL,
+    pub scode: HRESULT,
+    pub filetime: FILETIME,
+    pub bstrVal: ManuallyDrop<BSTR>,
+    pub ptr: *mut std::ffi::c_void, // for all pointer fields
     
     //unused
     //pub(crate) punkVal: ManuallyDrop<IUnknown>, //com::IUnknown stores vtable as a pointer internally
@@ -228,7 +226,11 @@ impl Drop for PROPVARIANT {
 	fn drop(&mut self) {
 		match self.vt {
             VARTYPE::VT_EMPTY => {},
-            VARTYPE::VT_BSTR => { unsafe { ManuallyDrop::drop(&mut self.data.bstrVal) }}
+            VARTYPE::VT_BSTR => { unsafe { 
+                //causes heap corruption. can we not use free?
+                //on windows i thing SysAlloc/SysFree are different heaps to malloc/free
+                ManuallyDrop::drop(&mut self.data.bstrVal)
+            }}
             //VARTYPE::VT_UNKNOWN => {unsafe { ManuallyDrop::drop(&mut self.data.punkVal)}}
             _ => {}
 		}

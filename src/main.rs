@@ -2,13 +2,23 @@ use std::cell::Cell;
 use std::error::Error;
 use std::path::PathBuf;
 
-use ip7z::IArchive::{ArchiveOpenCallback, IArchiveOpenCallback, IInArchive, NHandlerPropID, OpenStatus};
+use ip7z::IArchive::{ArchiveOpenCallback, IArchiveOpenCallback, IInArchive, HandlerPropID, OpenStatus};
 use ip7z::IStream::{FileInStream, IInStream};
-use ip7z::ffi::{PROPID, Z7Formats};
+use ip7z::ffi::{PROPID, Z7, Z7Formats};
+use ip7z::propid;
 use ip7z::win_ffi::{BSTR, HRESULT, PROPVARIANT, VARTYPE};
+
 fn main() -> Result<(), Box<dyn Error>>{
+
+    let bstr = BSTR::try_from("hello")?;
+    println!("bstr len: {}",bstr.SysStringLen());
+    println!("{}",bstr);
+    drop(bstr);
+
+    let z7 = Z7::new()?;
+
     unsafe {
-    let r = ip7z::ffi::CreateInterface::<IInArchive>(Z7Formats::Lzma.handler_clsid());
+    let r = z7.CreateInterface::<IInArchive>(Z7Formats::Z7.handler_clsid());
     let in_archive = match r {
         Ok(a) => a,
         Err(e) => {
@@ -18,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     };
 
     let mut value: PROPVARIANT = PROPVARIANT::default();
-    in_archive.GetProperty(0, NHandlerPropID::kClassID as PROPID, &mut value).ok()?;
+    in_archive.GetProperty(0, HandlerPropID::kClassID as PROPID, &mut value).ok()?;
 
     let fname = PathBuf::from("./tmp/@ace.7z");
     let in_fstream = FileInStream::new(&fname).unwrap();
@@ -31,6 +41,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         let mut var_type = VARTYPE::default();
         in_archive.GetPropertyInfo(i, &mut name, &mut prop_id, &mut var_type).ok()?;
     }
+
     let open_cbk = ArchiveOpenCallback::allocate(Cell::new(OpenStatus::default()));
     let max_check_start_pos = 0;
     in_archive.Open(
@@ -39,10 +50,10 @@ fn main() -> Result<(), Box<dyn Error>>{
         open_cbk.query_interface::<IArchiveOpenCallback>().ok_or(HRESULT::E_NOINTERFACE)?
         ).ok()?;
 
-    let mut num_items: u32 = 0;
-    in_archive.GetNumberOfItems(&mut num_items).ok()?;
-
-    println!("num items: {num_items}");
+    in_archive.into_iter().for_each(|i| {
+        let i = i.unwrap();
+        println!("{}",i.path.display());
+    });
 
     println!("exiting main...");
     }

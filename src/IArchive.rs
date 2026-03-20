@@ -1,10 +1,13 @@
-use std::cell::Cell;
+use std::array::IntoIter;
+use std::cell::{Cell, RefCell};
 
 use crate::ffi::{PROPID,Z7IGroups,wchar};
-use crate::win_ffi::{PROPVARIANT,BSTR,VARTYPE,HRESULT};
+use crate::propid::Z7PropIDs;
+use crate::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE};
 
 use bitflags::bitflags;
 use com::interfaces::IUnknown;
+use num_enum::TryFromPrimitive;
 use crate::IProgress::*;
 use crate::IStream::*;
 
@@ -83,8 +86,8 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x83))]
     pub unsafe interface IArchiveUpdateCallbackFile: IArchiveUpdateCallback {
-        pub fn GetStream2(&self, index: u32, in_stream: *mut ISequentialInStream, notify_op: NUpdateNotifyOp) -> HRESULT;
-        pub fn ReportOperation(&self, index_type: u32, index: u32, notify_op: NUpdateNotifyOp) -> HRESULT;
+        pub fn GetStream2(&self, index: u32, in_stream: *mut ISequentialInStream, notify_op: UpdateNotifyOp) -> HRESULT;
+        pub fn ReportOperation(&self, index_type: u32, index: u32, notify_op: UpdateNotifyOp) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x84))]
@@ -95,7 +98,7 @@ com::interfaces! {
     #[uuid(Z7IGroups::IArchive.iface_iid(0xA0))]
     pub unsafe interface IOutArchive: IUnknown {
         pub fn UpdateItems(&self, out_stream: ISequentialOutStream, num_items: u32, update_callback: IArchiveUpdateCallback) -> HRESULT;
-        pub fn GetFileTimeType(&self, time_type: *mut NFileTimeType) -> HRESULT;
+        pub fn GetFileTimeType(&self, time_type: *mut FileTimeType) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x03))]
@@ -136,18 +139,18 @@ com::interfaces! {
 #[allow(non_snake_case)]
 #[repr(u32)]
 #[derive(Clone,Copy)]
-pub enum NFileTimeType
+pub enum FileTimeType
 {
-KNotDefined = u32::MAX,
-KWindows = 0,
-KUnix,
-KDOS,
-K1ns
+    NotDefined = u32::MAX,
+    Windows = 0,
+    Unix,
+    DOS,
+    OneNs
 }
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NArcInfoTimeFlags {
+pub enum ArcInfoTimeFlags {
     kTime_Prec_Mask_bit_index = 0,
     kTime_Prec_Mask_num_bits = 26,
 
@@ -157,7 +160,7 @@ pub enum NArcInfoTimeFlags {
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NHandlerPropID {
+pub enum HandlerPropID {
       kName = 0,        // VT_BSTR
       kClassID,         // binary GUID in VT_BSTR
       kExtension,       // VT_BSTR
@@ -174,17 +177,18 @@ pub enum NHandlerPropID {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(u32)]
-pub enum NAskMode {
-    kExtract = 0,
-    kTest,
-    kSkip,
-    kReadExternal   
+#[derive(TryFromPrimitive)]
+#[repr(i32)]
+pub enum AskMode {
+    Extract = 0,
+    Test,
+    Skip,
+    ReadExternal   
 }
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NOperationResult {
+pub enum OperationResult {
     kOK = 0,
     kUnsupportedMethod,
     kDataError,
@@ -199,7 +203,7 @@ pub enum NOperationResult {
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NEventIndexType {
+pub enum EventIndexType {
     kNoIndex = 0,
     kInArcIndex,
     kBlockIndex,
@@ -209,7 +213,7 @@ pub enum NEventIndexType {
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
-pub enum NUpdateNotifyOp {
+pub enum UpdateNotifyOp {
     kAdd = 0,
     kUpdate,
     kAnalyze,
@@ -223,8 +227,8 @@ pub enum NUpdateNotifyOp {
 }
 
 //TODO derive macro
-unsafe impl com::AbiTransferable for NUpdateNotifyOp {
-    type Abi = NUpdateNotifyOp;
+unsafe impl com::AbiTransferable for UpdateNotifyOp {
+    type Abi = UpdateNotifyOp;
     fn get_abi(&self) -> Self::Abi { unsafe { std::mem::transmute_copy(self) } }
 }
 
@@ -232,7 +236,7 @@ unsafe impl com::AbiTransferable for NUpdateNotifyOp {
 
 bitflags!{
 
-    pub struct NPropDataType: u32 {
+    pub struct PropDataType: u32 {
         const kMask_ZeroEnd   = 1 << 4;
         // const UInt32 kMask_BigEndian = 1 << 5;
         const kMask_Utf       = 1 << 6;
@@ -248,7 +252,7 @@ bitflags!{
     }
 
     //for IArchiveRequestMemoryUseCallback
-    pub struct NRequestMemoryUseFlags: u32 {
+    pub struct RequestMemoryUseFlags: u32 {
         const k_AllowedSize_WasForced    = 1 << 0;  // (*allowedSize) was forced by -mmemx or -smemx
         const k_DefaultLimit_Exceeded    = 1 << 1;  // default limit of archive format was exceeded
         const k_MLimit_Exceeded          = 1 << 2;  // -mmemx value was exceeded
@@ -262,7 +266,7 @@ bitflags!{
     }
 
     //for IArchiveRequestMemoryUseCallback
-    pub struct NRequestMemoryAnswerFlags: u32 {
+    pub struct RequestMemoryAnswerFlags: u32 {
         const k_Allow          = 1 << 0;  // allow further archive extraction
         const k_Stop           = 1 << 1;  // for exit (and return_code == E_ABORT is used)
         const k_SkipArc        = 1 << 2;  // skip current archive extraction
@@ -316,16 +320,131 @@ com::class! {
     }
 }
 
-// com::class!{
-//     pub class ArchiveExtractCallback: IArchiveExtractCallback(IProgress), IProgress {
-//         progress: RefCell<Progress>
-//     }
+com::class!{
+    #[no_class_factory]
+    pub class ArchiveExtractCallback: IArchiveExtractCallback(IProgress), IProgress {
+        in_archive: IInArchive,
+        progress: Progress,
+        out_streams: Vec<ISequentialOutStream>
+    }
 
-//     impl IProgress for ArchiveExtractCallback {
+    impl IProgress for ArchiveExtractCallback {
+        fn SetTotal(&self, total: u64) -> HRESULT {
+            self.progress.SetTotal(total)
+        }
+        fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
+            self.progress.SetCompleted(complete_value)
+        }
+    }
 
-//     }
+    impl IArchiveExtractCallback for ArchiveExtractCallback {
+        pub fn GetStream(&self, index: u32, out_stream: *mut ISequentialOutStream, ask_extract_mode: i32) -> HRESULT {
+            let ask_extract_mode: AskMode = match AskMode::try_from_primitive(ask_extract_mode) {
+                Err(_) => return HRESULT::E_INVALIDARG,
+                Ok(v) => v
+            };
+            match ask_extract_mode {
+                AskMode::Extract => {
 
-//     impl IArchiveExtractCallback for ArchiveExtractCallback {
-        
-//     }
-// }
+                }
+                AskMode::Skip => {
+
+                }
+                AskMode::Test => {
+
+                }
+                AskMode::ReadExternal => {
+                    
+                }
+            }
+
+            HRESULT::E_NOTIMPL
+        }
+
+        pub fn PrepareOperation(&self, ask_extract_mode: i32) -> HRESULT {
+
+            HRESULT::E_NOTIMPL
+        }
+
+        pub fn SetOperationResult(&self, op_res: i32) -> HRESULT {
+
+            HRESULT::E_NOTIMPL
+        }
+    }
+}
+
+//////////////// rust wrapper code ////////////////
+
+pub struct InArchiveItem {
+    pub path: std::path::PathBuf
+}
+
+impl InArchiveItem {
+    pub fn new(in_archive: &IInArchive, index: u32) -> HrResult<Self> {
+        let path = unsafe {
+            let mut value: PROPVARIANT = PROPVARIANT::default();
+            in_archive.GetProperty(index, Z7PropIDs::kpidPath as u32, &mut value as *mut _).ok()?;
+            if value.vt != VARTYPE::VT_BSTR {
+                return Err(HRESULT::TYPE_E_MISMATCH);
+            }
+            (*value.data.bstrVal).to_string()
+        };
+
+        Ok(Self{
+            path: std::path::PathBuf::from(path)
+        })
+    }
+}
+
+pub struct InArchiveItemIter {
+    pub index: u32,
+    pub count: u32,
+    pub archive: IInArchive,
+}
+
+impl IntoIterator for IInArchive {
+    type Item = HrResult<InArchiveItem>;
+    type IntoIter = InArchiveItemIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut count = 0;
+        unsafe { self.GetNumberOfItems(&mut count) };
+        InArchiveItemIter {
+            index: 0,
+            count,
+            archive: self.clone()
+        }
+    }
+}
+
+impl Iterator for InArchiveItemIter {
+    type Item = HrResult<InArchiveItem>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.count {
+            return None;
+        }
+        match self.archive.get_item(self.index) {
+            Ok(item) => {
+                self.index += 1;
+                Some(Ok(item))
+            }
+            Err(e) => Some(Err(e))
+        }
+
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.count - self.index) as usize;
+        (remaining, Some(remaining))
+    }
+}
+
+
+impl IInArchive {
+    pub fn get_item(&self, index: u32) -> HrResult<InArchiveItem> {
+        InArchiveItem::new(self, index)
+    }
+}
+ 
+///////////////////////////////////////////////////

@@ -1,7 +1,6 @@
 use std::cell::Cell;
-
-use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
 use com::interfaces::IUnknown;
+use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
 
 #[derive(Clone, Copy)]
 pub struct ProgressStatus {
@@ -24,14 +23,14 @@ com::class! {
     }
 
     impl IProgress for Progress {
-        fn SetTotal(&self, total: u64) -> HRESULT {
+        pub fn SetTotal(&self, total: u64) -> HRESULT {
             let mut s = self.status.get();
             s.total = total;
             self.status.set(s);
             HRESULT::S_OK
         }
 
-        fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
+        pub fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
             let mut s = self.status.get();
             unsafe { s.completed = *complete_value; }
             self.status.set(s);

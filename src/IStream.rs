@@ -1,8 +1,8 @@
-use crate::{ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
 use std::{cell::RefCell, fs::File, io::{Read, Seek, SeekFrom, Write}};
 use com::ClassAllocation;
 use com::interfaces::IUnknown;
 use strum_macros::FromRepr;
+use crate::{ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
 use crate::win_ffi::{PROPVARIANT, FILETIME, HRESULT};
 
 #[repr(C)]
@@ -114,11 +114,13 @@ fn Seek(file: &RefCell<File>,offset: i64, seek_origin: u32, new_position: *mut u
         Err(e) => return e,
         Ok(v) => v
     };
-    unsafe {
-        *new_position = match file.seek(seek_offset) {
-            Err(_e) => return HRESULT::E_FAIL,
-            Ok(v) => v
-        };
+    match file.seek(seek_offset) {
+        Err(_e) => return HRESULT::E_FAIL,
+        Ok(v) => {
+            if !new_position.is_null() {
+                unsafe { *new_position=v; }
+            }
+        }
     }
     HRESULT::S_OK
 }
@@ -133,7 +135,6 @@ com::class!{
 
     impl ISequentialInStream for FileInStream {
         pub fn Read(&self,data: *mut u8,size: u32, processed_size: *mut u32) -> HRESULT {
-            println!("ISequentialInStream::Read - size: {}",size);
             let mut file = self.file.borrow_mut();
             let buf: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(data,size as usize) };
             let r = file.read(buf);
@@ -149,7 +150,6 @@ com::class!{
 
     impl IInStream for FileInStream {
         fn Seek(&self, offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
-            println!("IInStream::Seek");
             Seek(&self.file,offset,seek_origin,new_position)
         }
     }
@@ -189,7 +189,9 @@ com::class! {
             let r = file.write(buf);
             match r {
                 Ok(s) => {
-                    unsafe {*processed_size = s as u32};
+                    if !processed_size.is_null() {
+                        unsafe {*processed_size = s as u32};
+                    }
                     HRESULT::S_OK
                 }
                 Err(_) => HRESULT::E_FAIL

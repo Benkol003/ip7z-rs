@@ -1,3 +1,5 @@
+use crate::win_ffi::VARTYPE;
+
 #[allow(non_camel_case_types)]
 #[derive(Debug,Default)]
 #[repr(u32)]
@@ -112,4 +114,13 @@ pub enum Z7PropIDs {
     kpid_NUM_DEFINED,
 
     kpidUserDefined = 0x10000
+}
+
+impl From<Z7PropIDs> for VARTYPE {
+    fn from(value: Z7PropIDs) -> Self {
+        match value {
+            Z7PropIDs::kpidPath => VARTYPE::VT_BSTR,
+            _ => VARTYPE::VT_ERROR //todo RM 
+        } 
+    }
 }
