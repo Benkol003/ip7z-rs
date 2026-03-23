@@ -1,3 +1,5 @@
+use std::{error::Error, path::PathBuf};
+
 fn main() {
     assert!(
         cfg!(feature = "static") ^ cfg!(feature = "dynamic"),

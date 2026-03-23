@@ -1,33 +1,3 @@
-[package]
-name = "ip7z"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-
-[lib]
-name = "ip7z"
-path =  "src/lib.rs"
-
-[features]
-default = ["dynamic"]
-dynamic = ["dep:libloading"]
-static = ["dep:uasm"]
-
-#for when do static linking
-#[target.build-dependencies]
-#cc = "1.2.57"
-
-[target.'cfg(windows)'.dependencies]
-winreg = "0.56"
-
-
-[dependencies]
-bitflags = "2.11.0"
-com = { git = "https://github.com/Benkol003/com-rs.git", version = "0.6.0", features = ["class"]}
-num_enum = "0.7.5"
-strum = "0.28.0"
-strum_macros = "0.28.0"
-uasm = { version = "1.0.4", optional = true }
-widestring = { version = "1.2.1"}
-libloading = { version = "0.9.0", optional = true }
-
+[workspace]
+resolver = "3"
+members = ["ip7z", "ip7z-sys"]
