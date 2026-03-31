@@ -2,7 +2,7 @@
 
 use std::{error::Error, ffi::c_void, path::PathBuf};
 
-pub type HRESULT = u32;
+pub type HRESULT = i32;
 
 pub type PROPID = u32;
 
@@ -52,6 +52,15 @@ macro_rules! lib_dynamic {
                     })
                 }
             }
+
+            pub fn new() -> Result<Self,Box<dyn Error>> {
+                unsafe {
+                    let lib = libloading::Library::new(Self::find_7z()?)?;
+                    let sself = Self::load(lib)?;
+                    sself.SetLargePageMode();
+                    Ok(sself)
+                }
+            }
         }
     }
 }
@@ -70,6 +79,14 @@ macro_rules! lib_static {
                     unsafe { (self.$name)( $( $arg ),* ) }
                 }
             )*
+
+            pub fn new() -> Result<Self,Box<dyn Error>> {
+                Ok(Self{
+                    $(
+                        $name: $name,
+                    )*
+                })
+            }
         }
 
         unsafe extern "C" {
@@ -94,15 +111,25 @@ macro_rules! lib {
     }
 }
 
+//createencoder/decoder: see CodecExports.cpp allow creating coder interfaces from index not clsid
+//TODO probabl mark as deprecated
+
 lib!(
     Z7,
     fn CreateDecoder(index: u32, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
     fn CreateEncoder(index: i32, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
     fn CreateObject(clsid: *const GUID, iid: *const GUID, out_object: *mut *mut c_void) -> HRESULT;
+    
+    //ArchiveExports.cpp
+    fn GetNumberOfFormats(num_formats: *mut u32) -> HRESULT;
     #[deprecated]
     fn GetHandlerProperty(propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
     fn GetHandlerProperty2(index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
     fn SetLargePageMode() -> HRESULT;
+
+    //CodecExports.cpp
+    fn GetNumberOfMethods(num_codecs: *mut u32) -> HRESULT;
+    fn GetMethodProperty(codec_index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
 );
 
 
@@ -148,28 +175,6 @@ impl Z7 {
             .ok_or(errmsg)?;
 
         Ok(PathBuf::from(path))
-    }
-
-    #[cfg(feature = "dynamic")]
-    pub fn new() -> Result<Self,Box<dyn Error>> {
-        unsafe {
-            let lib = libloading::Library::new(Self::find_7z()?)?;
-            let sself = Self::load(lib)?;
-            sself.SetLargePageMode();
-            Ok(sself)
-        }
-    }
-
-    #[cfg(feature = "static")]
-    pub fn new() -> Result<Self,Box<dyn Error>> {
-        Ok(Self {
-            CreateEncoder : CreateEncoder,
-            CreateDecoder : CreateDecoder,
-            CreateObject: CreateObject,
-            GetHandlerProperty: GetHandlerProperty,
-            GetHandlerProperty2: GetHandlerProperty2,
-            SetLargePageMode: SetLargePageMode
-        })
     }
 
 }

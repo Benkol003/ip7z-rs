@@ -4,6 +4,8 @@ use com::{AbiTransferable, Interface};
 use com::sys::GUID;
 use com::interfaces::IUnknown;
 
+use crate::IArchive::HandlerPropID;
+use crate::ICoder::MethodPropID;
 use crate::win_ffi::{PROPVARIANT,HRESULT, HrResult};
 
 pub type PROPID = u32;
@@ -27,7 +29,7 @@ pub const fn handler_clsid(id: u8) -> GUID {
 }
 
 #[repr(transparent)]
-pub struct Z7(ip7z_sys::Z7);
+pub struct Z7(pub(crate) ip7z_sys::Z7);
 
 impl Z7 {
 
@@ -46,6 +48,25 @@ impl Z7 {
             }
         }
     }
+
+    pub unsafe fn GetHandlerProperty(&self, propid: HandlerPropID, value: *mut PROPVARIANT) -> HRESULT {
+        unsafe {
+            (self.0.GetHandlerProperty)(propid as ip7z_sys::PROPID,value.cast()).into()
+        }
+    }
+
+    pub unsafe fn GetHandlerProperty2(&self, index: u32, propid: HandlerPropID, value: &mut PROPVARIANT) -> HRESULT {
+        unsafe {
+            (self.0.GetHandlerProperty2)(index,propid as ip7z_sys::PROPID,value as *mut _ as *mut ip7z_sys::PROPVARIANT).into()
+        }
+    }
+
+    pub unsafe fn GetMethodProperty(&self, codec_index: u32, propid: MethodPropID, value: &mut PROPVARIANT) -> HRESULT {
+        unsafe {
+            (self.0.GetMethodProperty)(codec_index, propid as ip7z_sys::PROPID, value as *mut _ as *mut ip7z_sys::PROPVARIANT).into()
+        }
+    }
+
 }
 
 //for {23170F69-40C1-278A-0000-00yy00xx0000}

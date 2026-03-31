@@ -1,5 +1,4 @@
 
-/// TODO test cross-platform builds
 /// currently we copy the 7z source tree into out-dir, as makefiles will not work
 /// if we set out dir to a path containing spaces, and will also fail to build 'all' target if we set a custom output dir
 /// TODO if we just include source files here manually
@@ -10,15 +9,17 @@ fn main() {
         "only one of 'static' and 'dynamic' features can be enabled"
     );
 
-    #[cfg(windows)]{
-        println!("cargo:rustc-link-lib=dylib=advapi32");  //needed for SysAllocString / SysFreeString
-    }
-
     #[cfg(all(feature = "static"))] {
         let z7_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("7zip");
         let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
         copy_folder(&z7_dir,&out_dir);
-        build_7z(&z7_dir, &out_dir);
+        
+        match std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap().as_str() {
+            "windows" => build_7z_msvc(z7_dir, out_dir),
+            "unix"  => build_7z_unix(z7_dir, out_dir),
+            t => panic!("unsupported target platform {}",t)
+        }
+
     }
 }
 
@@ -37,8 +38,8 @@ fn copy_folder(src: impl AsRef<std::path::Path>,dest: impl AsRef<std::path::Path
     }
 }
 
-#[cfg(all(any(target_os = "linux",target_os = "macos"),feature = "static"))]
-fn build_7z(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::Path>) {
+#[cfg(feature = "static")]
+fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::Path>) {
 
     //TODO setting MY_ARCH / -march / -mtune
 
@@ -47,29 +48,45 @@ fn build_7z(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::
 
     copy_folder(z7_dir,&out_dir);
 
-    let compiler = cc::Build::new().get_compiler();
+    let cc = cc::Build::new().cpp(false).get_compiler();
+    let cxx = cc::Build::new().cpp(true).get_compiler();
     let mut ar = cc::Build::new().get_archiver();
 
     let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
 
     //see 7zip/DOC/readme.txt, 7zip_gcc.mak
-    let platdef = match arch.as_str() {
-        "x86_64" => "IS_X64",
-        "x86" => "IS_X86",
-        "aarch64" => "IS_ARM64",
-        _ => panic!("unsupported architecture: {}", arch),
+    let asm_args: &[&str] = match arch.as_str() {
+        "x86_64" => &["IS_X64=1", "USE_ASM=1"],
+        "x86" => &["IS_X86=1","USE_ASM=1"],
+        "aarch64" => &["USE_ASM=1"], 
+        _ => &["USE_ASM=0"],//7zip_gcc.mak doesnt seem to build Asm/arm/, atm there is only a asm crc routine anyway
     };
+
+    //TODO mingw builds are currently broken 
+    let mingw_arg: &[String] = match std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && cxx.is_like_gnu() {
+        true => {
+            let cc_path = cc.path().to_str().unwrap();
+            let windres = if let Some(idx) = cc_path.find("-gcc") {
+                format!("RC={}-windres", &cc_path[..idx])
+            } else {
+                "RC=windres".to_string()
+            };
+            &["IS_MINGW=1".into(),windres,"CFLAGS=-loleaut32".into()]
+        },
+        false => &[]
+    };
+    
 
     let status = std::process::Command::new("make")
     .current_dir(&bundle_dir)
-    .env("CC", compiler.path())
-    .env("CFLAGS", compiler.cflags_env())
+    .env("CC", cc.path())
+    .env("CXX",cxx.path())
     .env("AR", ar.get_program())
-    .arg(format!("MY_ASM=\"{}\"",uasm::UASM_PATH))
-    .arg(format!("{}=1",platdef))
-    .arg(format!("USE_ASM=1")) //TODO gate behind asm feature
+    .arg(format!("MY_ASM=\"{}\"",uasm::UASM_PATH)) //TODO gate behind asm feature
+    .args(asm_args)
     .arg("-f").arg("makefile.gcc")
     .arg("-j")
+    .args(mingw_arg)
     .status().unwrap();
     if !status.success() {
         panic!("make failed with {}",status);
@@ -92,8 +109,9 @@ fn build_7z(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::
     println!("cargo:rustc-link-lib=stdc++"); //this should go to CPPFLAGS instead
 }
 
-#[cfg(all(target_os = "windows",feature = "static"))]
-fn build_7z(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::Path>) {
+
+#[cfg(feature = "static")]
+fn build_7z_msvc(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::Path>) {
     let tool = cc::Build::new().try_get_compiler().expect("failed to find compiler");
     let cl_path = tool.path();
     let nmake_path = cl_path.parent().unwrap().join("nmake.exe");
@@ -143,4 +161,6 @@ fn build_7z(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::
     println!("cargo:rustc-link-search={}",build_dir.display());
     println!("cargo:rustc-link-lib=static:+whole-archive=7z_static");
     println!("cargo:rustc-link-lib=user32");
+    println!("cargo:rustc-link-lib=dylib=advapi32"); 
+    println!("cargo:rustc-link-lib=dylib=oleaut32"); 
 }

@@ -3,12 +3,12 @@ use std::cell::{Cell, RefCell};
 
 use crate::ffi::{PROPID,Z7IGroups,wchar};
 use crate::propid::Z7PropIDs;
-use crate::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE};
+use crate::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, PROPVARIANTConversionError, VARTYPE};
 
 use bitflags::bitflags;
 use com::interfaces::IUnknown;
 use num_enum::TryFromPrimitive;
-use crate::IProgress::*;
+use crate::{FFIError, FFIResult, IProgress::*};
 use crate::IStream::*;
 
 com::interfaces! {
@@ -380,14 +380,12 @@ pub struct InArchiveItem {
 }
 
 impl InArchiveItem {
-    pub fn new(in_archive: &IInArchive, index: u32) -> HrResult<Self> {
+    pub fn new(in_archive: &IInArchive, index: u32) -> Result<Self,FFIError> {
         let path = unsafe {
             let mut value: PROPVARIANT = PROPVARIANT::default();
             in_archive.GetProperty(index, Z7PropIDs::kpidPath as u32, &mut value as *mut _).ok()?;
-            if value.vt != VARTYPE::VT_BSTR {
-                return Err(HRESULT::TYPE_E_MISMATCH);
-            }
-            (*value.data.bstrVal).to_string()
+            let vb: BSTR = value.try_into()?;
+            vb.to_string()
         };
 
         Ok(Self{
@@ -403,7 +401,7 @@ pub struct InArchiveItemIter {
 }
 
 impl IntoIterator for IInArchive {
-    type Item = HrResult<InArchiveItem>;
+    type Item = FFIResult<InArchiveItem>;
     type IntoIter = InArchiveItemIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -418,7 +416,7 @@ impl IntoIterator for IInArchive {
 }
 
 impl Iterator for InArchiveItemIter {
-    type Item = HrResult<InArchiveItem>;
+    type Item = FFIResult<InArchiveItem>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.count {
@@ -442,7 +440,7 @@ impl Iterator for InArchiveItemIter {
 
 
 impl IInArchive {
-    pub fn get_item(&self, index: u32) -> HrResult<InArchiveItem> {
+    pub fn get_item(&self, index: u32) -> FFIResult<InArchiveItem> {
         InArchiveItem::new(self, index)
     }
 }

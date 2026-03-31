@@ -1,12 +1,14 @@
-use std::{error::Error, path::PathBuf};
-
 fn main() {
     assert!(
         cfg!(feature = "static") ^ cfg!(feature = "dynamic"),
-        "only one of 'static' and 'dynamic' features can be enabled"
+        "exactly one of 'static' and 'dynamic' features can be enabled"
     );
 
-    #[cfg(windows)]{
-        println!("cargo:rustc-link-lib=dylib=advapi32");  //needed for SysAllocString / SysFreeString
+        match std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap().as_str() {
+            "windows" => {
+                println!("cargo:rustc-link-lib=dylib=oleaut32"); 
+            },
+            "unix"  => {},
+            t => panic!("unsupported target platform {}",t)
+        }
     }
-}

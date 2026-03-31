@@ -22,3 +22,4 @@ strum = "0.28.0"
 strum_macros = "0.28.0"
 widestring = { version = "1.2.1"}
 ip7z-sys = { path = "../ip7z-sys" }
+thiserror = "2.0.18"

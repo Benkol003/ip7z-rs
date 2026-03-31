@@ -1,7 +1,9 @@
+use com::AbiTransferable;
+
 use crate::win_ffi::VARTYPE;
 
 #[allow(non_camel_case_types)]
-#[derive(Debug,Default)]
+#[derive(Debug,Default,Clone, Copy)]
 #[repr(u32)]
 pub enum Z7PropIDs {
     #[default]
@@ -116,11 +118,20 @@ pub enum Z7PropIDs {
     kpidUserDefined = 0x10000
 }
 
+//TODO 
 impl From<Z7PropIDs> for VARTYPE {
     fn from(value: Z7PropIDs) -> Self {
         match value {
             Z7PropIDs::kpidPath => VARTYPE::VT_BSTR,
+            Z7PropIDs::kpidName => VARTYPE::VT_BSTR,
             _ => VARTYPE::VT_ERROR //todo RM 
         } 
+    }
+}
+
+unsafe impl AbiTransferable for Z7PropIDs {
+    type Abi = Self;
+    fn get_abi(&self) -> Self::Abi {
+        self.clone()
     }
 }
