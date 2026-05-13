@@ -1,0 +1,40 @@
+From c1dc0e0d6a24a2b88ce3c0fd0f51722a99f91d51 Mon Sep 17 00:00:00 2001
+From: UnladenCoconut <benjkollar03@gmail.com>
+Date: Wed, 13 May 2026 23:22:38 +0100
+Subject: [PATCH] suppress GCC 16+ -Warray-bounds false positives
+
+see https://github.com/ip7z/7zip/issues/214
+---
+ C/7zip_gcc_c.mak      | 2 +-
+ CPP/7zip/7zip_gcc.mak | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/C/7zip_gcc_c.mak b/C/7zip_gcc_c.mak
+index 006cfe0..330fb1d 100644
+--- a/C/7zip_gcc_c.mak
++++ b/C/7zip_gcc_c.mak
+@@ -14,7 +14,7 @@ PROGPATH = $(O)/$(PROG)
+ PROGPATH_STATIC = $(O)/$(PROG)s
+ 
+ ifneq ($(CC), xlc)
+-CFLAGS_WARN_WALL = -Wall -Werror -Wextra
++CFLAGS_WARN_WALL = -Wall -Werror -Wextra -Wno-array-bounds
+ endif
+ 
+ # for object file
+diff --git a/CPP/7zip/7zip_gcc.mak b/CPP/7zip/7zip_gcc.mak
+index a78c0fa..c7f92c8 100644
+--- a/CPP/7zip/7zip_gcc.mak
++++ b/CPP/7zip/7zip_gcc.mak
+@@ -24,7 +24,7 @@ PROGPATH_STATIC = $(O)/$(PROG)s
+ 
+ 
+ ifneq ($(CC), xlc)
+-CFLAGS_WARN_WALL = -Werror -Wall -Wextra
++CFLAGS_WARN_WALL = -Werror -Wall -Wextra -Wno-array-bounds
+ endif
+ 
+ # for object file
+-- 
+2.54.0
+

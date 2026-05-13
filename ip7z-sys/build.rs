@@ -1,4 +1,3 @@
-
 /// currently we copy the 7z source tree into out-dir, as makefiles will not work
 /// if we set out dir to a path containing spaces, and will also fail to build 'all' target if we set a custom output dir
 /// TODO if we just include source files here manually
@@ -13,7 +12,8 @@ fn main() {
         let z7_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("7zip");
         let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
         copy_folder(&z7_dir,&out_dir);
-        
+        patch_z7(&out_dir);
+
         match std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap().as_str() {
             "windows" => build_7z_msvc(z7_dir, out_dir),
             "unix"  => build_7z_unix(z7_dir, out_dir),
@@ -24,9 +24,10 @@ fn main() {
 }
 
 #[cfg(feature = "static")]
-const Z7_BUNDLE: &str = "CPP/7zip/Bundles/Format7zF";  
+const Z7_BUNDLE: &str = "CPP/7zip/Bundles/Format7zF";
 
 fn copy_folder(src: impl AsRef<std::path::Path>,dest: impl AsRef<std::path::Path>) {
+    let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
     for entry in std::fs::read_dir(src).unwrap() {
         let entry = entry.unwrap();
@@ -46,8 +47,6 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
     let bundle_dir = out_dir.as_ref().join(Z7_BUNDLE);
     let build_dir = bundle_dir.join("_o");
 
-    copy_folder(z7_dir,&out_dir);
-
     let cc = cc::Build::new().cpp(false).get_compiler();
     let cxx = cc::Build::new().cpp(true).get_compiler();
     let mut ar = cc::Build::new().get_archiver();
@@ -58,11 +57,11 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
     let asm_args: &[&str] = match arch.as_str() {
         "x86_64" => &["IS_X64=1", "USE_ASM=1"],
         "x86" => &["IS_X86=1","USE_ASM=1"],
-        "aarch64" => &["USE_ASM=1"], 
+        "aarch64" => &["USE_ASM=1"],
         _ => &["USE_ASM=0"],//7zip_gcc.mak doesnt seem to build Asm/arm/, atm there is only a asm crc routine anyway
     };
 
-    //TODO mingw builds are currently broken 
+    //TODO mingw builds are currently broken
     let mingw_arg: &[String] = match std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && cxx.is_like_gnu() {
         true => {
             let cc_path = cc.path().to_str().unwrap();
@@ -75,7 +74,7 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
         },
         false => &[]
     };
-    
+
 
     let status = std::process::Command::new("make")
     .current_dir(&bundle_dir)
@@ -130,8 +129,6 @@ fn build_7z_msvc(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
     let bundle_dir = out_dir.as_ref().join(Z7_BUNDLE);
     let build_dir = bundle_dir.join(cl_arch);
 
-    copy_folder(z7_dir,&out_dir);
-
     let status = std::process::Command::new(&nmake_path)
         .current_dir(&bundle_dir)
         .envs(tool.env().to_vec())
@@ -161,6 +158,70 @@ fn build_7z_msvc(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
     println!("cargo:rustc-link-search={}",build_dir.display());
     println!("cargo:rustc-link-lib=static:+whole-archive=7z_static");
     println!("cargo:rustc-link-lib=user32");
-    println!("cargo:rustc-link-lib=dylib=advapi32"); 
-    println!("cargo:rustc-link-lib=dylib=oleaut32"); 
+    println!("cargo:rustc-link-lib=dylib=advapi32");
+    println!("cargo:rustc-link-lib=dylib=oleaut32");
+}
+
+fn patch_z7(z7_dir: impl AsRef<std::path::Path>) {
+    let patch_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("patches");
+
+    //remove submodule .git file
+    std::fs::remove_file(&z7_dir.as_ref().join(".git")).unwrap();
+    let repo = git2::Repository::init(&z7_dir).unwrap();
+    repo.set_head("refs/heads/master").unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None).unwrap();
+    let tree_id = index.write_tree().unwrap();
+    index.write().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let sig = git2::Signature::now("git2", "git2").unwrap();
+    let mut head = repo.find_commit(repo.commit(Some("refs/heads/master"),&sig,&sig,"git2: commit checkout",&tree,&[]).unwrap()).unwrap();
+
+    let mut items: Vec<_> = std::fs::read_dir(patch_dir).unwrap().map(|e| e.unwrap()).collect();
+    // //apply patch series in order
+    items.sort_by_key(|e| e.path());
+    for item in items {
+        println!("cargo:info=applying patch {}",item.file_name().display());
+        let mbox_patch = std::fs::read(item.path()).unwrap();
+
+        //TODO if cant parse assume raw diff instead
+        let message = mail_parser::MessageParser::new().parse(&mbox_patch).unwrap();
+        let from = message.from().unwrap().clone().into_list();
+        assert!(from.len()==1);
+        let addr = from.get(0).unwrap();
+        let date = message.date().unwrap();
+        let tz_offset: i32 = (date.tz_hour as i32 * 60) + date.tz_minute as i32;
+        let time = git2::Time::new(date.to_timestamp(),tz_offset);
+        let sig = git2::Signature::new(&addr.name().unwrap().as_ref(),&addr.address().unwrap().as_ref(),&time).unwrap();
+
+        //split upto diff contents
+        let mut commit_msg = String::new();
+        let mut diff = String::new();
+        let mut found_diff: bool = false;
+        for line in message.body_text(0).unwrap().lines() {
+            if found_diff || line.starts_with("diff --git") {
+                found_diff = true;
+                diff.push_str(line);
+                diff.push('\n');
+            }else{
+                commit_msg.push_str(line);
+                commit_msg.push('\n');
+            }
+        }
+
+        let diff = git2::Diff::from_buffer(diff.as_bytes()).unwrap();
+
+        repo.apply(&diff, git2::ApplyLocation::Both, None).unwrap();
+        index.add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None).unwrap();
+
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+
+        //let commit_msg = format!("git2",item.file_name().display());
+        //TOOD use split out message
+        //
+        head = repo.find_commit(repo.commit(Some("HEAD"),&sig,&sig,&commit_msg,&tree,&[&head]).unwrap()).unwrap();
+    }
+    println!("cargo:info=out dir: {}",&z7_dir.as_ref().display());
 }
