@@ -1,8 +1,10 @@
-use std::{cell::RefCell, fs::File, io::{Read, Seek, SeekFrom, Write}};
+use std::{cell::RefCell, error::Error, fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}};
 use com::ClassAllocation;
 use com::interfaces::IUnknown;
 use strum_macros::FromRepr;
-use crate::{ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
+use thiserror::Error;
+use tracing::instrument;
+use crate::{FFIError, IArchive::InArchiveItem, ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
 use crate::win_ffi::{PROPVARIANT, FILETIME, HRESULT};
 
 #[repr(C)]
@@ -91,7 +93,7 @@ com::interfaces! {
     pub unsafe interface IStreamGetProps: IUnknown {
         pub fn GetProps2(&self, props: *mut StreamFileProps) -> HRESULT;
     }
-    
+
     #[uuid(Z7IGroups::IStream.iface_iid(0xa))]
     pub unsafe interface IStreamGetProp: IUnknown {
         pub fn GetProperty(&self, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
@@ -134,6 +136,7 @@ com::class!{
     }
 
     impl ISequentialInStream for FileInStream {
+        //todo only instrument on error as gets called a lot
         pub fn Read(&self,data: *mut u8,size: u32, processed_size: *mut u32) -> HRESULT {
             let mut file = self.file.borrow_mut();
             let buf: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(data,size as usize) };
@@ -149,6 +152,7 @@ com::class!{
     }
 
     impl IInStream for FileInStream {
+        #[instrument(skip(self),name="FileInStream::Seek")]
         fn Seek(&self, offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
             Seek(&self.file,offset,seek_origin,new_position)
         }
@@ -156,6 +160,8 @@ com::class!{
 }
 
 impl FileInStream {
+
+    #[instrument(name="FileInStream::new")] //TODO path param as asref
     pub fn new(path: &std::path::Path) -> std::io::Result<ClassAllocation<Self>> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -171,9 +177,13 @@ com::class! {
     }
 
     impl IOutStream for FileOutStream {
+
+        #[instrument(skip(self),name="FileOutStream::Seek")]
         fn Seek(&self, offset: i64, seek_origin: u32, new_position: *mut u64) -> HRESULT {
             Seek(&self.file,offset,seek_origin,new_position)
         }
+
+        #[instrument(skip(self),name="FileOutStream::SetSize")]
         fn SetSize(&self, new_size: u64) -> HRESULT {
             match self.file.borrow_mut().set_len(new_size) {
                 Err(_) => HRESULT::E_FAIL,
@@ -183,6 +193,7 @@ com::class! {
     }
 
     impl ISequentialOutStream for FileOutStream {
+        #[instrument(skip(self),name="FileOutStream::Write")]
         pub fn Write(&self, data: *const u8,size: u32, processed_size: *mut u32) -> HRESULT {
             let mut file = self.file.borrow_mut();
             let buf: &[u8] = unsafe { std::slice::from_raw_parts(data,size as usize) };
@@ -198,4 +209,36 @@ com::class! {
             }
         }
     }
+}
+
+impl FileOutStream {
+    #[instrument(skip(path), fields(path = %path.as_ref().display()),name="FileOutStream::new")]
+    pub fn new(path: impl AsRef<std::path::Path>) -> std::io::Result<ClassAllocation<Self>> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path);
+        let file  = match file {
+            Ok(f) => f,
+            Err(e) => {
+                println!("{:?}",e);
+                return Err(e);
+            }
+        };
+
+        let allocation = Self::allocate(RefCell::new(file));
+        Ok(allocation)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum FileStreamError {
+    #[error(transparent)]
+    Ffi(#[from] FFIError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }

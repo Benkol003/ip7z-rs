@@ -1,15 +1,20 @@
 use std::array::IntoIter;
 use std::cell::{Cell, RefCell};
+use std::path::{PathBuf,Path};
 
-use crate::ffi::{PROPID,Z7IGroups,wchar};
+use crate::ffi::{PROPID, Z7IGroups, wchar};
 use crate::propid::Z7PropIDs;
-use crate::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, PROPVARIANTConversionError, VARTYPE};
+use crate::win_ffi::{
+    BSTR, HRESULT, HrResult, PROPVARIANT, PROPVARIANTConversionError, PropValue, VARTYPE,
+};
 
-use bitflags::bitflags;
-use com::interfaces::IUnknown;
-use num_enum::TryFromPrimitive;
-use crate::{FFIError, FFIResult, IProgress::*};
 use crate::IStream::*;
+use crate::{FFIError, FFIResult, IProgress::*, try_hr};
+use bitflags::bitflags;
+use com::ClassAllocation;
+use com::{Interface, interfaces::IUnknown};
+use num_enum::TryFromPrimitive;
+use tracing::{instrument,trace,error};
 
 com::interfaces! {
     #[uuid(Z7IGroups::IArchive.iface_iid(0x10))]
@@ -34,7 +39,7 @@ com::interfaces! {
     pub unsafe interface IArchiveOpenVolumeCallback: IUnknown {
         pub fn GetProperty(&self,prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
         pub fn GetStream(&self, name: *const wchar, stream: *mut IInStream) -> HRESULT;
-    } 
+    }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x40))]
     pub unsafe interface IInArchiveGetStream: IUnknown {
@@ -51,8 +56,8 @@ com::interfaces! {
         pub fn Open(&self, stream: IInStream, max_check_start_pos: *const u64, open_callback: IArchiveOpenCallback) -> HRESULT;
         pub fn Close(&self) -> HRESULT;
         pub fn GetNumberOfItems(&self, num_items: *mut u32) -> HRESULT;
-        pub fn GetProperty(&self, index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: i32, extract_callback: IArchiveExtractCallback) -> HRESULT;
+        pub fn GetProperty(&self, index: u32, propid: Z7PropIDs, value: *mut PROPVARIANT) -> HRESULT;
+        pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: AskMode, extract_callback: IArchiveExtractCallback) -> HRESULT;
         pub fn GetArchiveProperty(&self, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
         pub fn GetNumberOfProperties(&self, num_props: *mut u32) -> HRESULT;
         pub fn GetPropertyInfo(&self, index: u32, name: *mut BSTR, prop_id: *mut PROPID, var_type: *mut VARTYPE) -> HRESULT;
@@ -77,7 +82,7 @@ com::interfaces! {
         pub fn GetStream(&self, index: u32, in_stream: *mut ISequentialInStream) -> HRESULT;
         pub fn SetOperationResult(&self, op_res: i32) -> HRESULT;
     }
-    
+
     #[uuid(Z7IGroups::IArchive.iface_iid(0x82))]
     pub unsafe interface IArchiveUpdateCallback2: IProgress {
         pub fn GetVolumeSize(&self, index: u32, size: *mut u64) -> HRESULT;
@@ -108,7 +113,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x04))]
     pub unsafe interface IArchiveKeepModeForNextOpen: IUnknown {
-        pub fn KeepModeForNextOpen(&self) -> HRESULT; 
+        pub fn KeepModeForNextOpen(&self) -> HRESULT;
     }
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x05))]
@@ -118,10 +123,10 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::IArchive.iface_iid(0x09))]
     pub unsafe interface IArchiveRequestMemoryUseCallback: IUnknown {
-        pub fn RequestMemoryUse(&self, 
-            flags: u32, 
-            index_type: u32, 
-            index: u32, 
+        pub fn RequestMemoryUse(&self,
+            flags: u32,
+            index_type: u32,
+            index: u32,
             path: *const wchar,
             required_size: u64,
             allowed_size: *mut u64,
@@ -131,21 +136,19 @@ com::interfaces! {
 
 }
 
-
 //TODO:
 //cant use bitflags struct as not AbiTransferable
 //allow use of typedef? or macro for reusing function defs
 
 #[allow(non_snake_case)]
 #[repr(u32)]
-#[derive(Clone,Copy)]
-pub enum FileTimeType
-{
+#[derive(Clone, Copy)]
+pub enum FileTimeType {
     NotDefined = u32::MAX,
     Windows = 0,
     Unix,
     DOS,
-    OneNs
+    OneNs,
 }
 
 #[allow(non_camel_case_types)]
@@ -160,34 +163,43 @@ pub enum ArcInfoTimeFlags {
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
+#[derive(Debug)]
 pub enum HandlerPropID {
-      kName = 0,        // VT_BSTR
-      kClassID,         // binary GUID in VT_BSTR
-      kExtension,       // VT_BSTR
-      kAddExtension,    // VT_BSTR
-      kUpdate,          // VT_BOOL
-      kKeepName,        // VT_BOOL
-      kSignature,       // binary in VT_BSTR
-      kMultiSignature,  // binary in VT_BSTR
-      kSignatureOffset, // VT_UI4
-      kAltStreams,      // VT_BOOL
-      kNtSecure,        // VT_BOOL
-      kFlags,           // VT_UI4
-      kTimeFlags        // VT_UI4
+    kName = 0,        // VT_BSTR
+    kClassID,         // binary GUID in VT_BSTR
+    kExtension,       // VT_BSTR
+    kAddExtension,    // VT_BSTR
+    kUpdate,          // VT_BOOL
+    kKeepName,        // VT_BOOL
+    kSignature,       // binary in VT_BSTR
+    kMultiSignature,  // binary in VT_BSTR
+    kSignatureOffset, // VT_UI4
+    kAltStreams,      // VT_BOOL
+    kNtSecure,        // VT_BOOL
+    kFlags,           // VT_UI4
+    kTimeFlags,       // VT_UI4
 }
 
 #[allow(non_camel_case_types)]
-#[derive(TryFromPrimitive)]
+#[derive(TryFromPrimitive, Debug)]
 #[repr(i32)]
 pub enum AskMode {
     Extract = 0,
     Test,
     Skip,
-    ReadExternal   
+    ReadExternal,
+}
+
+unsafe impl com::AbiTransferable for AskMode {
+    type Abi = AskMode;
+    fn get_abi(&self) -> Self::Abi {
+        unsafe { std::mem::transmute_copy(self) }
+    }
 }
 
 #[allow(non_camel_case_types)]
-#[repr(u32)]
+#[derive(TryFromPrimitive, Debug)]
+#[repr(i32)]
 pub enum OperationResult {
     kOK = 0,
     kUnsupportedMethod,
@@ -198,7 +210,14 @@ pub enum OperationResult {
     kDataAfterEnd,
     kIsNotArc,
     kHeadersError,
-    kWrongPassword
+    kWrongPassword,
+}
+
+unsafe impl com::AbiTransferable for OperationResult {
+    type Abi = OperationResult;
+    fn get_abi(&self) -> Self::Abi {
+        unsafe { std::mem::transmute_copy(self) }
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -207,9 +226,8 @@ pub enum EventIndexType {
     kNoIndex = 0,
     kInArcIndex,
     kBlockIndex,
-    kOutArcIndex
+    kOutArcIndex,
 }
-
 
 #[allow(non_camel_case_types)]
 #[repr(u32)]
@@ -223,18 +241,20 @@ pub enum UpdateNotifyOp {
     kDelete,
     kHeader,
     kHashRead,
-    kInFileChanged  
+    kInFileChanged,
 }
 
 //TODO derive macro
 unsafe impl com::AbiTransferable for UpdateNotifyOp {
     type Abi = UpdateNotifyOp;
-    fn get_abi(&self) -> Self::Abi { unsafe { std::mem::transmute_copy(self) } }
+    fn get_abi(&self) -> Self::Abi {
+        unsafe { std::mem::transmute_copy(self) }
+    }
 }
 
 //NUpdate::NOperationResult: kOK only
 
-bitflags!{
+bitflags! {
 
     pub struct PropDataType: u32 {
         const kMask_ZeroEnd   = 1 << 4;
@@ -248,8 +268,10 @@ bitflags!{
         const kRaw = 1;
 
         const kUtf8z  = Self::kMask_Utf8.bits()  | Self::kMask_ZeroEnd.bits();
-        const kUtf16z = Self::kMask_Utf16.bits() | Self::kMask_ZeroEnd.bits();    
+        const kUtf16z = Self::kMask_Utf16.bits() | Self::kMask_ZeroEnd.bits();
     }
+
+
 
     //for IArchiveRequestMemoryUseCallback
     pub struct RequestMemoryUseFlags: u32 {
@@ -257,10 +279,10 @@ bitflags!{
         const k_DefaultLimit_Exceeded    = 1 << 1;  // default limit of archive format was exceeded
         const k_MLimit_Exceeded          = 1 << 2;  // -mmemx value was exceeded
         const k_SLimit_Exceeded          = 1 << 3;  // -smemx value was exceeded
-        
+
         const k_NoErrorMessage           = 1 << 10; // do not show error message, and show only request
         const k_IsReport                 = 1 << 11; // only report is required, without user request
-        
+
         const k_SkipArc_IsExpected       = 1 << 12; // NRequestMemoryAnswerFlags::k_SkipArc flag answer is expected
         const k_Report_SkipArc           = 1 << 13; // report about SkipArc operation
     }
@@ -275,12 +297,12 @@ bitflags!{
     }
 }
 
-#[derive(Default,Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct OpenStatus {
     completed_bytes: u64,
     completed_files: u64,
     total_bytes: u64,
-    total_files: u64
+    total_files: u64,
 }
 
 com::class! {
@@ -289,6 +311,7 @@ com::class! {
     }
 
     impl IArchiveOpenCallback for ArchiveOpenCallback {
+        #[instrument(skip(self))]
         pub fn SetTotal(&self, files: *const u64, bytes: *const u64) -> HRESULT {
             println!("IArchiveOpenCallback::SetTotal");
             unsafe {
@@ -303,6 +326,8 @@ com::class! {
                 HRESULT::S_OK
             }
         }
+
+        #[instrument(skip(self))]
         pub fn SetCompleted(&self, files: *const u64, bytes: *const u64) -> HRESULT {
             println!("IArchiveOpenCallback::SetCompleted");
             unsafe {
@@ -320,55 +345,141 @@ com::class! {
     }
 }
 
-com::class!{
+//TODO impl new for ArchiveOpenCallback
+
+com::class! {
     #[no_class_factory]
     pub class ArchiveExtractCallback: IArchiveExtractCallback(IProgress), IProgress {
         in_archive: IInArchive,
-        progress: Progress,
-        out_streams: Vec<ISequentialOutStream>
+        progress: ClassAllocation<Progress>,
+        //TODO test for multithreading / if multiple streams can be opened at once
+        current_stream: RefCell<Option<ClassAllocation<FileOutStream>>>,
+        dest_dir: PathBuf,
     }
 
     impl IProgress for ArchiveExtractCallback {
+
+        #[instrument(skip(self))]
         fn SetTotal(&self, total: u64) -> HRESULT {
             self.progress.SetTotal(total)
         }
+
         fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
             self.progress.SetCompleted(complete_value)
         }
     }
 
     impl IArchiveExtractCallback for ArchiveExtractCallback {
+
+        #[instrument(skip(self),name = "ArchiveExtractCallback::GetStream")]
         pub fn GetStream(&self, index: u32, out_stream: *mut ISequentialOutStream, ask_extract_mode: i32) -> HRESULT {
             let ask_extract_mode: AskMode = match AskMode::try_from_primitive(ask_extract_mode) {
-                Err(_) => return HRESULT::E_INVALIDARG,
+                Err(_) => {
+                    error!("AskMode::try_from_primitive failed");
+                    return HRESULT::E_INVALIDARG;
+                }
                 Ok(v) => v
             };
+
+            tracing::trace!("ask mode: {:?}",ask_extract_mode);
+            //file should always be closed via setoperationresult; TODO assert tests if needs multithreading.
+            assert!(self.current_stream.borrow().is_none());
+
             match ask_extract_mode {
                 AskMode::Extract => {
 
-                }
-                AskMode::Skip => {
+                    //TODO we are going to clean up how we call GetProperty to reduce boilerplate
 
+                    let mut pv = PROPVARIANT::default();
+                    unsafe { try_hr!(self.in_archive.GetProperty(index, Z7PropIDs::kpidPath,&mut pv as *mut _).ok()); }
+                    let dest = try_hr!(String::try_from(&pv));
+                    let dest = self.dest_dir.join(&dest);
+                    trace!("path: {}",&dest.display());
+
+                    unsafe { try_hr!(self.in_archive.GetProperty(index, Z7PropIDs::kpidIsDir, &mut pv as *mut _).ok()); }
+                    let is_dir = try_hr!(bool::try_from(&pv));
+                    trace!("is dir: {}",is_dir);
+
+                    if is_dir {
+                        try_hr!(std::fs::create_dir_all(&dest));
+                        //TODO com defines interfaces as nonnullable vtables so we have to cast to void pointer which isnt ideal
+                        unsafe { std::ptr::write(out_stream as *mut *mut (), std::ptr::null_mut()); }
+                    }else {
+                        let stream = try_hr!(FileOutStream::new(dest).map_err(|_| HRESULT::E_FAIL));
+                        let ptr: ISequentialOutStream = try_hr!(stream.query_interface::<ISequentialOutStream>().ok_or(HRESULT::E_FAIL));
+                        self.current_stream.replace(Some(stream));
+                        unsafe { std::ptr::write(out_stream,ptr); }
+                    }
+
+                    trace!("return ok");
+                    return HRESULT::S_OK;
+                }
+
+                //TODO: looks like 7zip does check if the vtable pointer is null, need to test
+                /* IArchive.h:
+
+
+                IArchiveExtractCallback::GetStream()
+                UInt32 index - index of item in Archive
+                Int32 askExtractMode  (Extract::NAskMode)
+                    if (askMode != NExtract::NAskMode::kExtract)
+                    {
+                    then the callee doesn't write data to stream: (*outStream == NULL)
+                    }
+
+                Out:
+                    (*outStream == NULL) - for directories
+                    (*outStream == NULL) - if link (hard link or symbolic link) was created
+                    if (*outStream == NULL && askMode == NExtract::NAskMode::kExtract)
+                    {
+                        then the caller must skip extracting of that file.
+                    }
+
+                 */
+                AskMode::Skip => {
+                    self.current_stream.replace(None);
+                    unsafe { *out_stream = std::mem::transmute(std::ptr::null_mut::<()>()) }
                 }
                 AskMode::Test => {
-
+                    self.current_stream.replace(None);
+                    unsafe { *out_stream = std::mem::transmute(std::ptr::null_mut::<()>()) }
                 }
                 AskMode::ReadExternal => {
-                    
+                    trace!("not impl");
+                    return HRESULT::E_NOTIMPL;
                 }
             }
 
-            HRESULT::E_NOTIMPL
+            trace!("return ok");
+            HRESULT::S_OK
         }
 
-        pub fn PrepareOperation(&self, ask_extract_mode: i32) -> HRESULT {
-
-            HRESULT::E_NOTIMPL
+        #[instrument(skip(self))]
+        pub fn PrepareOperation(&self, _ask_extract_mode: i32) -> HRESULT {
+            //TODO is ask mode the same as GetStream?
+            //indicate here about to start op vs opening stream
+            HRESULT::S_OK
         }
 
+        #[instrument(skip(self),name="ArchiveExtractCallback::SetOperationResult")]
         pub fn SetOperationResult(&self, op_res: i32) -> HRESULT {
+            trace!("op res: {}",op_res);
+            let op_res = match OperationResult::try_from_primitive(op_res) {
+                Err(_) => {
+                    return HRESULT::E_INVALIDARG
+                },
+                Ok(v) => v,
+            };
 
-            HRESULT::E_NOTIMPL
+            //TODO how do we report this back to the user to handle errors
+            match op_res {
+                _ => {
+                    ;
+                }
+            }
+
+            self.current_stream.replace(None);
+            HRESULT::S_OK
         }
     }
 }
@@ -376,20 +487,16 @@ com::class!{
 //////////////// rust wrapper code ////////////////
 
 pub struct InArchiveItem {
-    pub path: std::path::PathBuf
+    pub in_archive: IInArchive,
+    pub index: u32,
 }
 
 impl InArchiveItem {
-    pub fn new(in_archive: &IInArchive, index: u32) -> Result<Self,FFIError> {
-        let path = unsafe {
-            let mut value: PROPVARIANT = PROPVARIANT::default();
-            in_archive.GetProperty(index, Z7PropIDs::kpidPath as u32, &mut value as *mut _).ok()?;
-            let vb: BSTR = value.try_into()?;
-            vb.to_string()
-        };
 
-        Ok(Self{
-            path: std::path::PathBuf::from(path)
+    pub fn new(in_archive: &IInArchive, index: u32) -> Result<Self, FFIError> {
+        Ok(Self {
+            in_archive: in_archive.clone(),
+            index: index,
         })
     }
 }
@@ -400,7 +507,7 @@ pub struct InArchiveItemIter {
     pub archive: IInArchive,
 }
 
-impl IntoIterator for IInArchive {
+impl IntoIterator for &IInArchive {
     type Item = FFIResult<InArchiveItem>;
     type IntoIter = InArchiveItemIter;
 
@@ -410,7 +517,7 @@ impl IntoIterator for IInArchive {
         InArchiveItemIter {
             index: 0,
             count,
-            archive: self.clone()
+            archive: self.clone(),
         }
     }
 }
@@ -427,9 +534,8 @@ impl Iterator for InArchiveItemIter {
                 self.index += 1;
                 Some(Ok(item))
             }
-            Err(e) => Some(Err(e))
+            Err(e) => Some(Err(e)),
         }
-
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -438,11 +544,10 @@ impl Iterator for InArchiveItemIter {
     }
 }
 
-
 impl IInArchive {
     pub fn get_item(&self, index: u32) -> FFIResult<InArchiveItem> {
         InArchiveItem::new(self, index)
     }
 }
- 
+
 ///////////////////////////////////////////////////

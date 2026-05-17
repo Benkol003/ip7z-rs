@@ -1,10 +1,12 @@
-use std::fmt;
+use std::fmt::{self, Debug};
+
+use crate::win_ffi::PROPVARIANTConversionError;
 
 pub type HrResult<T> = Result<T,HRESULT>;
 
 /// 7-zip uses the following subset of HRESULT error codes.
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct HRESULT(i32);
 
@@ -25,7 +27,7 @@ macro_rules! derive_codes {
                     )*
                     _ => "(Unknown HRESULT)",
                 };
-                write!(f,"{}: 0x{}",name_str,self.0 as u32)
+                write!(f,"{}: 0x{:X}",name_str,self.0 as u32)
             }
         }
     }
@@ -42,9 +44,15 @@ derive_codes!(HRESULT,
     CLASS_E_CLASSNOTAVAILABLE   = 0x80040111,
     E_OUTOFMEMORY               = 0x8007000E,
     E_INVALIDARG                = 0x80070057,
-    TYPE_E_MISMATCH             = 0x80028CA0,
+    E_TYPE_MISMATCH             = 0x80028CA0,
 
 );
+
+impl Debug for HRESULT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HRESULT({})", self)
+    }
+}
 
 impl HRESULT {
     pub const fn from_i32(value: i32) -> HRESULT {
@@ -94,4 +102,26 @@ impl HRESULT {
             }
         }
     }
+}
+
+impl From<std::io::Error> for HRESULT {
+    fn from(_: std::io::Error) -> Self {
+        HRESULT::E_FAIL
+    }
+}
+
+impl From<PROPVARIANTConversionError> for HRESULT {
+    fn from(e: PROPVARIANTConversionError) -> Self {
+        HRESULT::E_TYPE_MISMATCH
+    }
+}
+
+#[macro_export]
+macro_rules! try_hr {
+    ($expr:expr) => {
+        match $expr {
+            Ok(v) => v,
+            Err(e) => return HRESULT::from(e),
+        }
+    };
 }

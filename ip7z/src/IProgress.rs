@@ -1,8 +1,8 @@
-use std::cell::Cell;
-use com::interfaces::IUnknown;
+use std::cell::{Cell, RefCell};
+use com::{ClassAllocation, interfaces::IUnknown};
 use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct ProgressStatus {
     completed: u64,
     total: u64
@@ -36,5 +36,11 @@ com::class! {
             self.status.set(s);
             HRESULT::S_OK
         }
+    }
+}
+
+impl Progress {
+    pub fn new() -> ClassAllocation<Self> {
+        Progress::allocate(Cell::new(ProgressStatus::default()))
     }
 }

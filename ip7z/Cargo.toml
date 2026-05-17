@@ -20,6 +20,9 @@ com = { git = "https://github.com/Benkol003/com-rs.git", version = "0.6.0", feat
 num_enum = "0.7.5"
 strum = "0.28.0"
 strum_macros = "0.28.0"
-widestring = { version = "1.2.1"}
+widestring = "1.2.1"
 ip7z-sys = { path = "../ip7z-sys" }
 thiserror = "2.0.18"
+filetime = "0.2.27"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"

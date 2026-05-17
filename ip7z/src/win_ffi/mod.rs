@@ -4,8 +4,10 @@ mod hresult;
 mod bstr;
 mod propvariant;
 mod filetime;
+mod propvalue;
 
 pub use bstr::*;
 pub use hresult::*;
 pub use propvariant::*;
 pub use filetime::*;
+pub use propvalue::*;

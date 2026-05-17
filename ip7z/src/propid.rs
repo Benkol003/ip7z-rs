@@ -124,6 +124,8 @@ impl From<Z7PropIDs> for VARTYPE {
         match value {
             Z7PropIDs::kpidPath => VARTYPE::VT_BSTR,
             Z7PropIDs::kpidName => VARTYPE::VT_BSTR,
+            Z7PropIDs::kpidIsDir => VARTYPE::VT_BOOL,
+            //TODO fill the rest out
             _ => VARTYPE::VT_ERROR //todo RM 
         } 
     }

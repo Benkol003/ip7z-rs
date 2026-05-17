@@ -29,4 +29,13 @@ pub enum FFIError {
     PropVariantConversionError(#[from] PROPVARIANTConversionError)
 } 
 
+impl From<FFIError> for HRESULT {
+    fn from(e: FFIError) -> Self {
+        match e {
+            FFIError::HResultError(hr) => hr,
+            FFIError::PropVariantConversionError(_) => HRESULT::E_FAIL,
+        }
+    }
+}
+
 pub type FFIResult<T> = Result<T,FFIError>;

@@ -61,7 +61,7 @@ unsafe impl AbiTransferable for CoderPropID {
 
 //for ICompressCodecsInfo::GetProperty??
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u32)]
 pub enum MethodPropID {
     kID,
@@ -74,7 +74,7 @@ pub enum MethodPropID {
     kDecoderIsAssigned,
     kEncoderIsAssigned,
     kDigestSize,
-    kIsFilter 
+    kIsFilter
 }
 
 //TODO make this derivable
@@ -91,7 +91,7 @@ unsafe impl AbiTransferable for MethodPropID {
 #[repr(u32)]
 pub enum ModulePropID {
     kInterfaceType,   // VT_UI4
-    kVersion          // VT_UI4    
+    kVersion          // VT_UI4
 }
 
 com::interfaces! {
@@ -102,8 +102,8 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x5))]
     pub unsafe interface ICompressCoder: IUnknown {
-        pub fn Code(&self, 
-            in_stream: ISequentialInStream, 
+        pub fn Code(&self,
+            in_stream: ISequentialInStream,
             out_stream: ISequentialOutStream,
             in_size: *const u64,
             out_size: *const u64,
@@ -113,7 +113,7 @@ com::interfaces! {
 
     #[uuid(Z7IGroups::ICoder.iface_iid(0x18))]
     pub unsafe interface ICompressCoder2: IUnknown {
-        pub fn Code(&self, 
+        pub fn Code(&self,
             in_streams: *const ISequentialInStream,
             in_sizes: *const*const u64,
             num_in_streams: u32,

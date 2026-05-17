@@ -4,6 +4,9 @@ use com::{AbiTransferable, Interface};
 use com::sys::GUID;
 use com::interfaces::IUnknown;
 
+use tracing::instrument;
+use widestring::WideChar;
+
 use crate::IArchive::HandlerPropID;
 use crate::ICoder::MethodPropID;
 use crate::win_ffi::{PROPVARIANT,HRESULT, HrResult};
@@ -12,8 +15,9 @@ pub type PROPID = u32;
 
 //7zip typedefs stuff e.g. ULONG to u32 on linux so it matches window's definitions for unsigned long and not 64-bit
 
+//TODO remove this reexport.
 #[allow(non_camel_case_types)]
-pub type wchar = u16;
+pub type wchar = WideChar;
 
 /*
 given e.g. in c++ ISequentialInStream * const *inStreams:
@@ -37,6 +41,7 @@ impl Z7 {
         Ok(Self(ip7z_sys::Z7::new()?))
     }
 
+    #[instrument(skip(self))]
     pub fn CreateInterface<I: Interface>(&self, clsid: GUID) -> HrResult<I> {
         unsafe {
             let mut object: *mut c_void = std::ptr::null_mut();
@@ -49,18 +54,21 @@ impl Z7 {
         }
     }
 
+    #[instrument(skip(self))]
     pub unsafe fn GetHandlerProperty(&self, propid: HandlerPropID, value: *mut PROPVARIANT) -> HRESULT {
         unsafe {
             (self.0.GetHandlerProperty)(propid as ip7z_sys::PROPID,value.cast()).into()
         }
     }
 
+    #[instrument(skip(self))]
     pub unsafe fn GetHandlerProperty2(&self, index: u32, propid: HandlerPropID, value: &mut PROPVARIANT) -> HRESULT {
         unsafe {
             (self.0.GetHandlerProperty2)(index,propid as ip7z_sys::PROPID,value as *mut _ as *mut ip7z_sys::PROPVARIANT).into()
         }
     }
 
+    #[instrument(skip(self))]
     pub unsafe fn GetMethodProperty(&self, codec_index: u32, propid: MethodPropID, value: &mut PROPVARIANT) -> HRESULT {
         unsafe {
             (self.0.GetMethodProperty)(codec_index, propid as ip7z_sys::PROPID, value as *mut _ as *mut ip7z_sys::PROPVARIANT).into()
@@ -92,68 +100,68 @@ impl Z7IGroups {
 
 #[repr(u8)]
 pub enum Z7Formats {
-   Zip      = 0x01,  
-   BZip2    = 0x02,  
-   Rar      = 0x03,  
-   Arj      = 0x04,  
-   Z        = 0x05,  
-   Lzh      = 0x06,  
-   Z7       = 0x07,  
-   Cab      = 0x08,  
-   Nsis     = 0x09,  
-   Lzma     = 0x0A,  
-   Lzma86   = 0x0B,      
-   Xz       = 0x0C,      
-   Ppmd     = 0x0D,      
-   Zstd     = 0x0E,      
-   LVM      = 0xBF,      
-   AVB      = 0xC0,      
-   LP       = 0xC1,      
-   Sparse   = 0xC2,          
-   APFS     = 0xC3,      
-   Vhdx     = 0xC4,      
-   Base64   = 0xC5,          
-   COFF     = 0xC6,      
-   Ext      = 0xC7,      
-   VMDK     = 0xC8,      
-   VDI      = 0xC9,      
-   Qcow     = 0xCA,      
-   GPT      = 0xCB,          
-   Rar5     = 0xCC,      
-   IHex     = 0xCD,          
-   Hxs      = 0xCE,          
-   TE       = 0xCF,      
-   UEFIc    = 0xD0,              
-   UEFIs    = 0xD1,          
-   SquashFS = 0xD2,              
-   CramFS   = 0xD3,              
-   APM      = 0xD4,          
-   Mslz     = 0xD5,              
-   Flv      = 0xD6,          
-   Swf      = 0xD7,          
-   Swfc     = 0xD8,      
-   Ntfs     = 0xD9,          
-   Fat      = 0xDA,          
-   Mbr      = 0xDB,          
-   Vhd      = 0xDC,          
-   Pe       = 0xDD,          
-   Elf      = 0xDE,          
-   MachO    = 0xDF,              
-   Udf      = 0xE0,          
-   Xar      = 0xE1,          
-   Mub      = 0xE2,              
-   Hfs      = 0xE3,          
-   Dmg      = 0xE4,          
-   Compound = 0xE5,              
-   Wim      = 0xE6,          
-   Iso      = 0xE7,                
-   Chm      = 0xE9,          
-   Split    = 0xEA,              
-   Rpm      = 0xEB,              
-   Deb      = 0xEC,          
-   Cpio     = 0xED,          
-   Tar      = 0xEE,          
-   GZip     = 0xEF,          
+   Zip      = 0x01,
+   BZip2    = 0x02,
+   Rar      = 0x03,
+   Arj      = 0x04,
+   Z        = 0x05,
+   Lzh      = 0x06,
+   Z7       = 0x07,
+   Cab      = 0x08,
+   Nsis     = 0x09,
+   Lzma     = 0x0A,
+   Lzma86   = 0x0B,
+   Xz       = 0x0C,
+   Ppmd     = 0x0D,
+   Zstd     = 0x0E,
+   LVM      = 0xBF,
+   AVB      = 0xC0,
+   LP       = 0xC1,
+   Sparse   = 0xC2,
+   APFS     = 0xC3,
+   Vhdx     = 0xC4,
+   Base64   = 0xC5,
+   COFF     = 0xC6,
+   Ext      = 0xC7,
+   VMDK     = 0xC8,
+   VDI      = 0xC9,
+   Qcow     = 0xCA,
+   GPT      = 0xCB,
+   Rar5     = 0xCC,
+   IHex     = 0xCD,
+   Hxs      = 0xCE,
+   TE       = 0xCF,
+   UEFIc    = 0xD0,
+   UEFIs    = 0xD1,
+   SquashFS = 0xD2,
+   CramFS   = 0xD3,
+   APM      = 0xD4,
+   Mslz     = 0xD5,
+   Flv      = 0xD6,
+   Swf      = 0xD7,
+   Swfc     = 0xD8,
+   Ntfs     = 0xD9,
+   Fat      = 0xDA,
+   Mbr      = 0xDB,
+   Vhd      = 0xDC,
+   Pe       = 0xDD,
+   Elf      = 0xDE,
+   MachO    = 0xDF,
+   Udf      = 0xE0,
+   Xar      = 0xE1,
+   Mub      = 0xE2,
+   Hfs      = 0xE3,
+   Dmg      = 0xE4,
+   Compound = 0xE5,
+   Wim      = 0xE6,
+   Iso      = 0xE7,
+   Chm      = 0xE9,
+   Split    = 0xEA,
+   Rpm      = 0xEB,
+   Deb      = 0xEC,
+   Cpio     = 0xED,
+   Tar      = 0xEE,
+   GZip     = 0xEF,
 }
 
 impl Z7Formats {
@@ -161,7 +169,7 @@ impl Z7Formats {
         //{23170F69-40C1-278A-1000-00 01 10 xx 00 00}
         GUID {data1: 0x23170F69, data2: 0x40C1, data3: group, data4: [0x10,0x00,0x00,0x01,0x10,id,0x00,0x00]}
     }
-    
+
     pub const fn handler_clsid(self) -> GUID {
         Self::format_clsid(0x278A,self as u8)
     }
