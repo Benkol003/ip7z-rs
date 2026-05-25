@@ -1,4 +1,4 @@
-use std::{error::Error, ffi::c_void, path::PathBuf};
+use std::{error::Error, ffi::c_void};
 
 use windows_core::{GUID, IUnknown, Interface, interface};
 

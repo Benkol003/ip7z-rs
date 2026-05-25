@@ -111,7 +111,7 @@ impl From<std::io::Error> for HRESULT {
 }
 
 impl From<PROPVARIANTConversionError> for HRESULT {
-    fn from(e: PROPVARIANTConversionError) -> Self {
+    fn from(_e: PROPVARIANTConversionError) -> Self {
         HRESULT::E_TYPE_MISMATCH
     }
 }

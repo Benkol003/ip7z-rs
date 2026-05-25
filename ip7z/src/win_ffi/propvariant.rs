@@ -2,7 +2,7 @@ use crate::{
     ffi::{PROPID, wchar},
     win_ffi::{BSTR, FILETIME, HRESULT},
 };
-use std::{error::Error, mem::ManuallyDrop, ops::Deref};
+use std::{error::Error, mem::ManuallyDrop};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]

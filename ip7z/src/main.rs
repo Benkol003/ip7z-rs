@@ -1,15 +1,13 @@
 use std::cell::{Cell, RefCell};
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use ip7z::IArchive::{ArchiveExtractCallback, ArchiveExtractCallback_Impl, ArchiveOpenCallback, AskMode, HandlerPropID, IArchiveExtractCallback, IArchiveOpenCallback, IInArchive, OpenStatus};
-use ip7z::ICoder::ICompressCodecsInfo;
-use ip7z::IProgress::{IProgress, Progress};
-use ip7z::IStream::{FileInStream, FileOutStream, IInStream};
+use ip7z::IArchive::{ArchiveExtractCallback, ArchiveOpenCallback, AskMode, IArchiveExtractCallback, IArchiveOpenCallback, IInArchive, OpenStatus};
+use ip7z::IProgress::Progress;
+use ip7z::IStream::{FileInStream, IInStream};
 use ip7z::ffi::{PROPID, Z7, Z7Formats};
-use ip7z::propid;
-use ip7z::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE};
-use windows_core::{ComObject, ComObjectInner, IUnknown, Interface};
+use ip7z::win_ffi::{BSTR, PROPVARIANT, VARTYPE};
+use windows_core::ComObjectInner;
 
 #[test]
 #[cfg_attr(miri, ignore)]
@@ -36,7 +34,7 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
         }
     };
 
-    let mut value: PROPVARIANT = PROPVARIANT::default();
+    let _value: PROPVARIANT = PROPVARIANT::default();
 
     //TODO GetArchiveProperty instead?
     //in_archive.GetProperty(0, HandlerPropID::kClassID, &mut value).ok()?;
@@ -56,19 +54,19 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
     let open_cbk = ArchiveOpenCallback { status: Cell::new(OpenStatus::default()) }.into_object();
     let max_check_start_pos = 0;
 
-    in_archive.Open(
+    let open_archive = in_archive.Open(
         in_fstream.as_interface::<IInStream>(),
         &max_check_start_pos,
         open_cbk.as_interface::<IArchiveOpenCallback>()
-        ).ok()?;
+        )?;
 
     let mut nitems: u32 = 0;
-    in_archive.GetNumberOfItems(&mut nitems).ok()?;
+    open_archive.GetNumberOfItems(&mut nitems).ok()?;
     assert!(nitems > 0);
 
     //TODO IArchive:new called a lot
-    in_archive.clone().into_iter().for_each(|i| {
-        let i = i.unwrap();
+    open_archive.into_iter().for_each(|i| {
+        let _i = i.unwrap();
         //println!("{}",i.path.display());
     });
 
@@ -79,17 +77,14 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
     let to_extract: Vec<u32> = (0..nitems).collect();
     let progress = Progress::default().into_object();
     let ca_extract_callback = ArchiveExtractCallback { 
-        in_archive: in_archive.clone(),
+        in_archive: open_archive,
         progress: progress,
         current_stream: RefCell::new(None),
         dest_dir: PathBuf::from("./tmp") }.into_object();
     let extract_callback = ca_extract_callback.as_interface::<IArchiveExtractCallback>(); //TODO converting option -> HRESULT
     //we get STG_E_INVALIDFUNCTION...
-    in_archive.Extract(to_extract.as_ptr(), to_extract.len() as u32, AskMode::Extract, extract_callback).ok()?; //TODO Error: HRESULT(-2147467259) not 0x8...
+    ca_extract_callback.in_archive.Extract(to_extract.as_ptr(), to_extract.len() as u32, AskMode::Extract, extract_callback).ok()?; //TODO Error: HRESULT(-2147467259) not 0x8...
 
-
-    //TODO leaks without this, wrap with a drop type
-    unsafe { in_archive.Close().ok()? }; 
     
     println!("exiting main...");
     }

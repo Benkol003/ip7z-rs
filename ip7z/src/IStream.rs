@@ -1,11 +1,11 @@
-use std::{cell::RefCell, error::Error, fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}};
+use std::{cell::RefCell, fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}};
 use strum_macros::FromRepr;
 use thiserror::Error;
 use tracing::instrument;
-use crate::{FFIError, IArchive::InArchiveItem, ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
+use crate::{FFIError, ffi::{PROPID,Z7IGroups}, win_ffi::HrResult};
 use crate::win_ffi::{PROPVARIANT, FILETIME, HRESULT};
 
-use windows_core::{GUID, interface, IUnknown, implement};
+use windows_core::{interface, IUnknown, implement};
 
 #[repr(C)]
 struct StreamFileProps {

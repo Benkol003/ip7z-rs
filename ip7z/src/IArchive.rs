@@ -1,11 +1,10 @@
 use std::cell::{Cell, RefCell};
-use std::ffi::c_void;
 use std::path::PathBuf;
 
 use crate::ffi::{PROPID, Z7IGroups, wchar};
 use crate::propid::Z7PropIDs;
 use crate::win_ffi::{
-    BSTR, HRESULT, HrResult, PROPVARIANT, PROPVARIANTConversionError, PropValue, VARTYPE,
+    BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE,
 };
 
 use crate::IStream::*;
@@ -14,7 +13,7 @@ use bitflags::bitflags;
 use num_enum::TryFromPrimitive;
 
 use tracing::{instrument,trace,error};
-use windows_core::{ComObject, ComObjectInner, ComObjectInterface, IUnknown, Interface, InterfaceRef, implement, interface};
+use windows_core::{ComObject, ComObjectInner, IUnknown, Interface, InterfaceRef, implement, interface};
 
 
 #[interface(Z7IGroups::IArchive.iface_iid(0x10))]
@@ -53,8 +52,8 @@ pub unsafe trait IArchiveOpenSetSubArchiveName: IUnknown {
 
 #[interface(Z7IGroups::IArchive.iface_iid(0x60))]
 pub unsafe trait IInArchive: IUnknown {
-    pub fn Open(&self, stream: InterfaceRef<IInStream>, max_check_start_pos: *const u64, open_callback: InterfaceRef<IArchiveOpenCallback>) -> HRESULT;
-    pub fn Close(&self) -> HRESULT;
+    fn _Open(&self, stream: InterfaceRef<IInStream>, max_check_start_pos: *const u64, open_callback: InterfaceRef<IArchiveOpenCallback>) -> HRESULT;
+    fn _Close(&self) -> HRESULT;
     pub fn GetNumberOfItems(&self, num_items: *mut u32) -> HRESULT;
     pub fn GetProperty(&self, index: u32, propid: Z7PropIDs, value: *mut PROPVARIANT) -> HRESULT;
     pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: AskMode, extract_callback: InterfaceRef<IArchiveExtractCallback>) -> HRESULT;
@@ -323,7 +322,7 @@ impl IArchiveOpenCallback_Impl for ArchiveOpenCallback_Impl {
 
 #[implement(IArchiveExtractCallback,IProgress)]
 pub struct ArchiveExtractCallback {
-    pub in_archive: IInArchive,
+    pub in_archive: IInArchiveOpen,
     pub progress: ComObject<Progress>,
     //TODO test for multithreading / if multiple streams can be opened at once
     pub current_stream: RefCell<Option<ComObject<FileOutStream>>>,
@@ -518,6 +517,73 @@ impl IInArchive {
     pub fn get_item(&self, index: u32) -> FFIResult<InArchiveItem> {
         InArchiveItem::new(self, index)
     }
+
+    pub fn Open(self, stream: InterfaceRef<IInStream>, max_check_start_pos: *const u64, open_callback: InterfaceRef<IArchiveOpenCallback>)  -> HrResult<IInArchiveOpen> {
+        unsafe { self._Open(stream, max_check_start_pos, open_callback).ok()? };
+        Ok(IInArchiveOpen(self))
+    }
 }
 
 ///////////////////////////////////////////////////
+
+//dont derive clone, need to construct a new underlying IInArchive and that is opened in 7zip 
+#[repr(transparent)]
+pub struct IInArchiveOpen(IInArchive);
+
+impl IntoIterator for &IInArchiveOpen {
+    type Item = FFIResult<InArchiveItem>;
+    type IntoIter = InArchiveItemIter;
+
+    fn into_iter(self) -> Self::IntoIter  {
+        self.0.into_iter()
+    }
+}
+
+
+impl Drop for IInArchiveOpen {
+    fn drop(&mut self) {
+        trace!("IInArchive::drop");
+        unsafe { self.0._Close(); }
+    }
+}
+
+
+//forward all IInArchive functions except for open and close
+impl IInArchiveOpen {
+
+    pub fn inner(&self) -> &IInArchive {
+        &self.0
+    }
+
+    pub fn GetNumberOfItems(&self, num_items: *mut u32) -> HRESULT { 
+        unsafe { self.0.GetNumberOfItems(num_items) } 
+    }
+
+    pub fn GetProperty(&self, index: u32, propid: Z7PropIDs, value: *mut PROPVARIANT) -> HRESULT { 
+        unsafe { self.0.GetProperty(index, propid, value) } 
+    }
+
+    pub fn Extract(&self, indicies: *const u32, num_items: u32, test_mode: AskMode, extract_callback: InterfaceRef<IArchiveExtractCallback>) -> HRESULT { 
+        unsafe { self.0.Extract(indicies, num_items, test_mode, extract_callback) } 
+    }
+
+    pub fn GetArchiveProperty(&self, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT { 
+        unsafe { self.0.GetArchiveProperty(prop_id, value) } 
+    }
+
+    pub fn GetNumberOfProperties(&self, num_props: *mut u32) -> HRESULT { 
+        unsafe { self.0.GetNumberOfProperties(num_props) } 
+    }
+
+    pub fn GetPropertyInfo(&self, index: u32, name: *mut BSTR, prop_id: *mut PROPID, var_type: *mut VARTYPE) -> HRESULT { 
+        unsafe { self.0.GetPropertyInfo(index, name, prop_id, var_type) } 
+    }
+
+    pub fn GetNumberOfArchiveProperties(&self, num_props: *mut u32) -> HRESULT { 
+        unsafe { self.0.GetNumberOfArchiveProperties(num_props) } 
+    }
+
+    pub fn GetArchivePropertyInfo(&self, index: u32, name: *mut BSTR, prop_id: *mut PROPID, var_type: *mut VARTYPE) -> HRESULT { 
+        unsafe { self.0.GetArchivePropertyInfo(index, name, prop_id, var_type) } 
+    }
+}

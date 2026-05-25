@@ -1,7 +1,7 @@
-use std::{cell::{Cell, RefCell}, default};
+use std::cell::Cell;
 use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
 
-use windows_core::{GUID, interface, IUnknown, implement};
+use windows_core::{interface, IUnknown, implement};
 
 #[derive(Clone, Copy, Default)]
 pub struct ProgressStatus {
