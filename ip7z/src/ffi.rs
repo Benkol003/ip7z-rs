@@ -1,8 +1,6 @@
 use std::{error::Error, ffi::c_void, path::PathBuf};
 
-use com::{AbiTransferable, Interface};
-use com::sys::GUID;
-use com::interfaces::IUnknown;
+use windows_core::{GUID, IUnknown, Interface, interface};
 
 use tracing::instrument;
 use widestring::WideChar;
@@ -184,22 +182,17 @@ impl Z7Formats {
     }
 }
 
-com::interfaces!{
-
-    /////////////// IHasher ///////////////
-    #[uuid(Z7IGroups::ICoder.iface_iid(0xC0))]
-    pub unsafe interface IHasher: IUnknown {
+#[interface(Z7IGroups::ICoder.iface_iid(0xC0))]
+pub unsafe trait IHasher: IUnknown {
         fn Init(&self);
         fn Update(&self,data: *const c_void,size: u32);
         fn Final(&self, digest: u8);
         fn GetDigestSize(&self) -> u32;
-    }
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0xC1))]
-    pub unsafe interface IHashers: IUnknown {
+#[interface(Z7IGroups::ICoder.iface_iid(0xC1))]
+pub unsafe trait IHashers: IUnknown {
         fn GetNumHashers(&self) -> u32;
         fn GetHasherProp(&self,index: u32, propid: PROPID, value: *mut PROPVARIANT) -> HRESULT;
         fn CreateHasher(&self, index: u32, hasher: *mut IHasher) -> HRESULT;
-    }
-    ///////////////////////////////////////
 }

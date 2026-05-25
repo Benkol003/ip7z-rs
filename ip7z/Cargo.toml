@@ -16,7 +16,12 @@ static = ["ip7z-sys/static"]
 
 [dependencies]
 bitflags = "2.11.0"
-com = { git = "https://github.com/Benkol003/com-rs.git", version = "0.6.0", features = ["class"]}
+
+
+windows-core = { path = "../windows-rs/crates/libs/core" }
+windows-interface = { path = "../windows-rs/crates/libs/interface" }
+windows-implement = { path = "../windows-rs/crates/libs/implement" }
+
 num_enum = "0.7.5"
 strum = "0.28.0"
 strum_macros = "0.28.0"

@@ -2,14 +2,14 @@ use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use com::Interface;
-use ip7z::IArchive::{ArchiveExtractCallback, ArchiveOpenCallback, AskMode, HandlerPropID, IArchiveExtractCallback, IArchiveOpenCallback, IInArchive, OpenStatus};
+use ip7z::IArchive::{ArchiveExtractCallback, ArchiveExtractCallback_Impl, ArchiveOpenCallback, AskMode, HandlerPropID, IArchiveExtractCallback, IArchiveOpenCallback, IInArchive, OpenStatus};
 use ip7z::ICoder::ICompressCodecsInfo;
 use ip7z::IProgress::{IProgress, Progress};
 use ip7z::IStream::{FileInStream, FileOutStream, IInStream};
 use ip7z::ffi::{PROPID, Z7, Z7Formats};
 use ip7z::propid;
 use ip7z::win_ffi::{BSTR, HRESULT, HrResult, PROPVARIANT, VARTYPE};
+use windows_core::{ComObject, ComObjectInner, IUnknown, Interface};
 
 #[test]
 #[cfg_attr(miri, ignore)]
@@ -32,7 +32,7 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
         Ok(a) => a,
         Err(e) => {
             println!("failed to create InArchive: {}",e.code());
-            return Ok(());
+            return Err(e.into());
         }
     };
 
@@ -42,7 +42,7 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
     //in_archive.GetProperty(0, HandlerPropID::kClassID, &mut value).ok()?;
 
     let fname = PathBuf::from("./tmp/@ace.7z");
-    let in_fstream = FileInStream::new(&fname).unwrap();
+    let in_fstream = FileInStream::new(&fname).unwrap().into_object();
 
     let mut nprop: u32 = u32::MAX;
     in_archive.GetNumberOfProperties(&mut nprop);
@@ -53,12 +53,13 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
         in_archive.GetPropertyInfo(i, &mut name, &mut prop_id, &mut var_type).ok()?;
     }
 
-    let open_cbk = ArchiveOpenCallback::allocate(Cell::new(OpenStatus::default()));
+    let open_cbk = ArchiveOpenCallback { status: Cell::new(OpenStatus::default()) }.into_object();
     let max_check_start_pos = 0;
+
     in_archive.Open(
-        in_fstream.query_interface::<IInStream>().ok_or(HRESULT::E_NOINTERFACE)?,
+        in_fstream.as_interface::<IInStream>(),
         &max_check_start_pos,
-        open_cbk.query_interface::<IArchiveOpenCallback>().ok_or(HRESULT::E_NOINTERFACE)?
+        open_cbk.as_interface::<IArchiveOpenCallback>()
         ).ok()?;
 
     let mut nitems: u32 = 0;
@@ -76,12 +77,20 @@ fn _archive_fname() -> Result<(), Box<dyn Error>>{
 
     //extract all
     let to_extract: Vec<u32> = (0..nitems).collect();
-    let progress = Progress::new();
-    let ca_extract_callback = ArchiveExtractCallback::allocate(in_archive.clone(), progress,RefCell::new(None),PathBuf::from("./tmp"));
-    let extract_callback = ca_extract_callback.query_interface::<IArchiveExtractCallback>().ok_or(HRESULT::E_NOINTERFACE)?; //TODO converting option -> HRESULT
+    let progress = Progress::default().into_object();
+    let ca_extract_callback = ArchiveExtractCallback { 
+        in_archive: in_archive.clone(),
+        progress: progress,
+        current_stream: RefCell::new(None),
+        dest_dir: PathBuf::from("./tmp") }.into_object();
+    let extract_callback = ca_extract_callback.as_interface::<IArchiveExtractCallback>(); //TODO converting option -> HRESULT
     //we get STG_E_INVALIDFUNCTION...
     in_archive.Extract(to_extract.as_ptr(), to_extract.len() as u32, AskMode::Extract, extract_callback).ok()?; //TODO Error: HRESULT(-2147467259) not 0x8...
 
+
+    //TODO leaks without this, wrap with a drop type
+    unsafe { in_archive.Close().ok()? }; 
+    
     println!("exiting main...");
     }
     Ok(())

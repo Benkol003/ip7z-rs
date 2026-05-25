@@ -1,17 +1,14 @@
-use com::sys::HRESULT;
-use com::interfaces::IUnknown;
-use crate::ffi::Z7IGroups;
+use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
 use crate::win_ffi::BSTR;
 
-com::interfaces! {
+use windows_core::{IUnknown, interface};
 
-    #[uuid(Z7IGroups::IPassword.iface_iid(0x10))]
-    pub unsafe interface ICryptoGetTextPassword: IUnknown {
-        pub fn CryptoGetTextPassword(&self, password: *mut BSTR) -> HRESULT;
-    }
+#[interface(Z7IGroups::IPassword.iface_iid(0x10))]
+pub unsafe trait ICryptoGetTextPassword: IUnknown {
 
-    #[uuid(Z7IGroups::IPassword.iface_iid(0x11))]
-    pub unsafe interface ICryptoGetTextPassword2: IUnknown {
-        pub fn CryptoGetTextPassword2(&self, password_is_defined: *mut i32, password: *mut BSTR) -> HRESULT;
-    }
+}
+
+#[interface(Z7IGroups::IPassword.iface_iid(0x11))]
+pub unsafe trait ICryptoGetTextPassword2: IUnknown {
+    fn CryptoGetTextPassword2(&self, password_is_defined: *mut i32, password: *mut BSTR) -> HRESULT;
 }

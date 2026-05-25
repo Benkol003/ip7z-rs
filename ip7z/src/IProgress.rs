@@ -1,6 +1,7 @@
-use std::cell::{Cell, RefCell};
-use com::{ClassAllocation, interfaces::IUnknown};
+use std::{cell::{Cell, RefCell}, default};
 use crate::{ffi::Z7IGroups, win_ffi::HRESULT};
+
+use windows_core::{GUID, interface, IUnknown, implement};
 
 #[derive(Clone, Copy, Default)]
 pub struct ProgressStatus {
@@ -8,39 +9,31 @@ pub struct ProgressStatus {
     total: u64
 }
 
-com::interfaces! {
-    #[uuid(Z7IGroups::IProgress.iface_iid(0x5))]
-    pub unsafe interface IProgress: IUnknown {
-        pub fn SetTotal(&self, total: u64) -> HRESULT;
-        pub fn SetCompleted(&self, complete_value: *const u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::IProgress.iface_iid(0x5))]
+pub unsafe trait IProgress: IUnknown {
+    pub fn SetTotal(&self, total: u64) -> HRESULT;
+    pub fn SetCompleted(&self, complete_value: *const u64) -> HRESULT;
 }
 
-com::class! {
-    #[no_class_factory]
-    pub class Progress: IProgress {
-        status: Cell<ProgressStatus>
-    }
 
-    impl IProgress for Progress {
-        pub fn SetTotal(&self, total: u64) -> HRESULT {
-            let mut s = self.status.get();
-            s.total = total;
-            self.status.set(s);
-            HRESULT::S_OK
-        }
-
-        pub fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
-            let mut s = self.status.get();
-            unsafe { s.completed = *complete_value; }
-            self.status.set(s);
-            HRESULT::S_OK
-        }
-    }
+#[derive(Default)]
+#[implement(IProgress)]
+pub struct Progress {
+    status: Cell<ProgressStatus>
 }
 
-impl Progress {
-    pub fn new() -> ClassAllocation<Self> {
-        Progress::allocate(Cell::new(ProgressStatus::default()))
+impl IProgress_Impl for Progress_Impl {
+    unsafe fn SetTotal(&self, total: u64) -> HRESULT {
+        let mut s = self.status.get();
+        s.total = total;
+        self.status.set(s);
+        HRESULT::S_OK
+    }
+
+    unsafe fn SetCompleted(&self, complete_value: *const u64) -> HRESULT {
+        let mut s = self.status.get();
+        unsafe { s.completed = *complete_value; }
+        self.status.set(s);
+        HRESULT::S_OK
     }
 }

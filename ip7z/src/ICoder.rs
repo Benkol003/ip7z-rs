@@ -1,10 +1,8 @@
 use crate::ffi::{PROPID,Z7IGroups};
 use std::cell::Cell;
 use std::ffi::c_void;
-use com::AbiTransferable;
-use com::sys::GUID;
-use com::interfaces::IUnknown;
 use crate::win_ffi::{HRESULT, PROPVARIANT};
+use windows_core::{GUID, IUnknown, InterfaceRef, implement, interface};
 
 use crate::IStream::*;
 
@@ -51,13 +49,6 @@ pub enum CoderPropID {
     kAffinityInGroup,   // VT_UI8
 }
 
-unsafe impl AbiTransferable for CoderPropID {
-    type Abi = u32;
-    fn get_abi(&self) -> Self::Abi {
-        self.clone() as u32
-    }
-}
-
 
 //for ICompressCodecsInfo::GetProperty??
 #[allow(non_camel_case_types)]
@@ -77,14 +68,6 @@ pub enum MethodPropID {
     kIsFilter
 }
 
-//TODO make this derivable
-unsafe impl AbiTransferable for MethodPropID {
-    type Abi = u32;
-    fn get_abi(&self) -> Self::Abi {
-        self.clone() as u32
-    }
-}
-
 //pub enum NModuleInterfaceType
 
 #[allow(non_camel_case_types)]
@@ -94,180 +77,178 @@ pub enum ModulePropID {
     kVersion          // VT_UI4
 }
 
-com::interfaces! {
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x4))]
-    pub unsafe interface ICompressProgressInfo: IUnknown {
-        pub fn SetRatioInfo(&self, in_size: *const u64, out_size: *const u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x4))]
+pub unsafe trait ICompressProgressInfo: IUnknown {
+    pub fn SetRatioInfo(&self, in_size: *const u64, out_size: *const u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x5))]
-    pub unsafe interface ICompressCoder: IUnknown {
-        pub fn Code(&self,
-            in_stream: ISequentialInStream,
-            out_stream: ISequentialOutStream,
-            in_size: *const u64,
-            out_size: *const u64,
-            progress: ICompressProgressInfo
-        ) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x5))]
+pub unsafe trait ICompressCoder: IUnknown {
+    pub fn Code(&self,
+        in_stream: InterfaceRef<ISequentialInStream>,
+        out_stream: InterfaceRef<ISequentialOutStream>,
+        in_size: *const u64,
+        out_size: *const u64,
+        progress: InterfaceRef<ICompressProgressInfo>
+    ) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x18))]
-    pub unsafe interface ICompressCoder2: IUnknown {
-        pub fn Code(&self,
-            in_streams: *const ISequentialInStream,
-            in_sizes: *const*const u64,
-            num_in_streams: u32,
-            out_streams: *const ISequentialOutStream,
-            out_sizes: *const*const u64,
-            num_out_streams: u32
-        ) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x18))]
+pub unsafe trait ICompressCoder2: IUnknown {
+    pub fn Code(&self,
+        in_streams: *const ISequentialInStream,
+        in_sizes: *const*const u64,
+        num_in_streams: u32,
+        out_streams: *const ISequentialOutStream,
+        out_sizes: *const*const u64,
+        num_out_streams: u32
+    ) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x1F))]
-    pub unsafe interface ICompressSetCoderPropertiesOpt: IUnknown {
-        pub fn SetCoderPropertiesOpt(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x1F))]
+pub unsafe trait ICompressSetCoderPropertiesOpt: IUnknown {
+    pub fn SetCoderPropertiesOpt(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
+}
 
-    //difference between this and CoderPropertiesOpt?
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x20))]
-    pub unsafe interface ICompressSetCoderProperties: IUnknown {
-        pub fn SetCoderProperties(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
-    }
+//difference between this and CoderPropertiesOpt?
+#[interface(Z7IGroups::ICoder.iface_iid(0x20))]
+pub unsafe trait ICompressSetCoderProperties: IUnknown {
+    pub fn SetCoderProperties(&self, prop_ids: *const CoderPropID, props: *const PROPVARIANT, num_props: u32) -> HRESULT;
+}
 
-    //TODO what is the array...
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x22))]
-    pub unsafe interface ICompressSetDecoderProperties2: IUnknown {
-        pub fn SetDecoderProperties2(&self, data: *const u8, size: u32) -> HRESULT;
-    }
+//TODO what is the array...
+#[interface(Z7IGroups::ICoder.iface_iid(0x22))]
+pub unsafe trait ICompressSetDecoderProperties2: IUnknown {
+    pub fn SetDecoderProperties2(&self, data: *const u8, size: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x23))]
-    pub unsafe interface ICompressWriteCoderProperties: IUnknown {
-        pub fn WriteCoderProperties(&self, out_stream: ISequentialOutStream) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x23))]
+pub unsafe trait ICompressWriteCoderProperties: IUnknown {
+    pub fn WriteCoderProperties(&self, out_stream: InterfaceRef<ISequentialOutStream>) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x24))]
-    pub unsafe interface ICompressGetInStreamProcessedSize: IUnknown {
-        pub fn GetInStreamProcessedSize(&self, value: *mut u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x24))]
+pub unsafe trait ICompressGetInStreamProcessedSize: IUnknown {
+    pub fn GetInStreamProcessedSize(&self, value: *mut u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x25))]
-    pub unsafe interface ICompressSetCoderMt: IUnknown {
-        pub fn SetNumberOfThreads(&self, num_threads: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x25))]
+pub unsafe trait ICompressSetCoderMt: IUnknown {
+    pub fn SetNumberOfThreads(&self, num_threads: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x26))]
-    pub unsafe interface ICompressSetFinishMode: IUnknown {
-        pub fn SetFinishMode(&self, mode: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x26))]
+pub unsafe trait ICompressSetFinishMode: IUnknown {
+    pub fn SetFinishMode(&self, mode: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x27))]
-    pub unsafe interface ICompressGetInStreamProcessedSize2: IUnknown {
-        pub fn GetInStreamProcessedSize2(&self, stream_index: u32, value: *mut u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x27))]
+pub unsafe trait ICompressGetInStreamProcessedSize2: IUnknown {
+    pub fn GetInStreamProcessedSize2(&self, stream_index: u32, value: *mut u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x28))]
-    pub unsafe interface ICompressSetMemLimit: IUnknown {
-        pub fn SetMemLimit(&self, mem_usage: u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x28))]
+pub unsafe trait ICompressSetMemLimit: IUnknown {
+    pub fn SetMemLimit(&self, mem_usage: u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x29))]
-    pub unsafe interface ICompressReadUnusedFromInBuf: IUnknown {
-        pub fn ReadUnusedFromInBuf(&self, data: *mut u8, size: u32, processed_size: *mut u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x29))]
+pub unsafe trait ICompressReadUnusedFromInBuf: IUnknown {
+    pub fn ReadUnusedFromInBuf(&self, data: *mut u8, size: u32, processed_size: *mut u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x30))]
-    pub unsafe interface ICompressGetSubStreamSize: IUnknown {
-        pub fn GetSubStreamSize(&self, sub_stream: u64, value: *mut u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x30))]
+pub unsafe trait ICompressGetSubStreamSize: IUnknown {
+    pub fn GetSubStreamSize(&self, sub_stream: u64, value: *mut u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x31))]
-    pub unsafe interface ICompressSetInStream: IUnknown {
-        pub fn SetOutStream(&self, in_stream: ISequentialInStream) -> HRESULT;
-        pub fn ReleaseInStream(&self) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x31))]
+pub unsafe trait ICompressSetInStream: IUnknown {
+    pub fn SetOutStream(&self, in_stream: InterfaceRef<ISequentialInStream>) -> HRESULT;
+    pub fn ReleaseInStream(&self) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x32))]
-    pub unsafe interface ICompressSetOutStream: IUnknown {
-        pub fn SetOutStream(&self, out_stream: ISequentialOutStream) -> HRESULT;
-        pub fn ReleaseOutStream(&self) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x32))]
+pub unsafe trait ICompressSetOutStream: IUnknown {
+    pub fn SetOutStream(&self, out_stream: InterfaceRef<ISequentialOutStream>) -> HRESULT;
+    pub fn ReleaseOutStream(&self) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x34))]
-    pub unsafe interface ICompressSetOutStreamSize: IUnknown {
-        pub fn SetOutStreamSize(&self, out_size: *const u64) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x34))]
+pub unsafe trait ICompressSetOutStreamSize: IUnknown {
+    pub fn SetOutStreamSize(&self, out_size: *const u64) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x35))]
-    pub unsafe interface ICompressSetBufSize: IUnknown {
-        pub fn SetInBufSize(&self, stream_index: u32, size: u32) -> HRESULT;
-        pub fn SetOutBufSize(&self, stream_index: u32, size: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x35))]
+pub unsafe trait ICompressSetBufSize: IUnknown {
+    pub fn SetInBufSize(&self, stream_index: u32, size: u32) -> HRESULT;
+    pub fn SetOutBufSize(&self, stream_index: u32, size: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x36))]
-    pub unsafe interface ICompressInitEncoder: IUnknown {
-        pub fn InitEncoder(&self) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x36))]
+pub unsafe trait ICompressInitEncoder: IUnknown {
+    pub fn InitEncoder(&self) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x37))]
-    pub unsafe interface ICompressSetInStream2: IUnknown {
-        pub fn SetInStream2(&self, stream_index: u32, in_stream: ISequentialInStream) -> HRESULT;
-        pub fn ReleaseInStream2(&self, stream_index: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x37))]
+pub unsafe trait ICompressSetInStream2: IUnknown {
+    pub fn SetInStream2(&self, stream_index: u32, in_stream: InterfaceRef<ISequentialInStream>) -> HRESULT;
+    pub fn ReleaseInStream2(&self, stream_index: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x40))]
-    pub unsafe interface ICompressFilter: IUnknown {
-        pub fn Init(&self) -> HRESULT;
-        pub fn Filter(&self, data: *mut u8, size: u32) -> u32;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x40))]
+pub unsafe trait ICompressFilter: IUnknown {
+    pub fn Init(&self) -> HRESULT;
+    pub fn Filter(&self, data: *mut u8, size: u32) -> u32;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x60))]
-    pub unsafe interface ICompressCodecsInfo: IUnknown {
-        pub fn GetNumMethods(&self, num_methods: *mut u32) -> HRESULT;
-        pub fn GetProperty(&self, index: u32, prop_id: MethodPropID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn CreateDecoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
-        pub fn CreateEncoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x60))]
+pub unsafe trait ICompressCodecsInfo: IUnknown {
+    pub fn GetNumMethods(&self, num_methods: *mut u32) -> HRESULT;
+    pub fn GetProperty(&self, index: u32, prop_id: MethodPropID, value: *mut PROPVARIANT) -> HRESULT;
+    pub fn CreateDecoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
+    pub fn CreateEncoder(&self, index: u32, iid: *const GUID, coder: *mut*mut c_void) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x61))]
-    pub unsafe interface ISetCompressCodecsInfo: IUnknown {
-        pub fn SetCompressCodecsInfo(&self, compress_codecs_info: ICompressCodecsInfo) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x61))]
+pub unsafe trait ISetCompressCodecsInfo: IUnknown {
+    pub fn SetCompressCodecsInfo(&self, compress_codecs_info: InterfaceRef<ICompressCodecsInfo>) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x80))]
-    pub unsafe interface ICryptoProperties: IUnknown {
-        pub fn SetKey(&self, data: *const u8, size: u32) -> HRESULT;
-        pub fn SetInitVector(&self, data: *const u8, size: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x80))]
+pub unsafe trait ICryptoProperties: IUnknown {
+    pub fn SetKey(&self, data: *const u8, size: u32) -> HRESULT;
+    pub fn SetInitVector(&self, data: *const u8, size: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x8C))]
-    pub unsafe interface ICryptoResetInitVector: IUnknown {
-        pub fn ResetInitVector(&self) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x8C))]
+pub unsafe trait ICryptoResetInitVector: IUnknown {
+    pub fn ResetInitVector(&self) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0x90))]
-    pub unsafe interface ICryptoSetPassword: IUnknown {
-        pub fn CryptoSetPassword(&self, data: *const u8, size: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0x90))]
+pub unsafe trait ICryptoSetPassword: IUnknown {
+    pub fn CryptoSetPassword(&self, data: *const u8, size: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0xA0))]
-    pub unsafe interface ICryptoSetCRC: IUnknown {
-        pub fn CryptoSetCRC(&self, crc: u32) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0xA0))]
+pub unsafe trait ICryptoSetCRC: IUnknown {
+    pub fn CryptoSetCRC(&self, crc: u32) -> HRESULT;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0xC0))]
-    pub unsafe interface IHasher: IUnknown {
-        pub fn Init(&self);
-        pub fn Update(&self, data: *const u8, size: u32);
-        pub fn Final(&self, digest: *mut u8);
-        pub fn GetDigestSize(&self) -> u32;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0xC0))]
+pub unsafe trait IHasher: IUnknown {
+    pub fn Init(&self);
+    pub fn Update(&self, data: *const u8, size: u32);
+    pub fn Final(&self, digest: *mut u8);
+    pub fn GetDigestSize(&self) -> u32;
+}
 
-    #[uuid(Z7IGroups::ICoder.iface_iid(0xC1))]
-    pub unsafe interface IHashers: IUnknown {
-        pub fn GetNumHashers(&self) -> u32;
-        pub fn GetHasherProp(&self, index: u32, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
-        pub fn CreateHasher(&self, index: u32, hasher: *mut IHasher) -> HRESULT;
-    }
+#[interface(Z7IGroups::ICoder.iface_iid(0xC1))]
+pub unsafe trait IHashers: IUnknown {
+    pub fn GetNumHashers(&self) -> u32;
+    pub fn GetHasherProp(&self, index: u32, prop_id: PROPID, value: *mut PROPVARIANT) -> HRESULT;
+    pub fn CreateHasher(&self, index: u32, hasher: *mut IHasher) -> HRESULT;
 }
 
 #[derive(Default)]
@@ -276,18 +257,16 @@ pub struct RatioInfo {
     pub out_size: u64
 }
 
-com::class! {
-    pub class CompressProgressInfo: ICompressProgressInfo {
-        ratio_info: Cell<RatioInfo>
-    }
+#[implement(ICompressProgressInfo)]
+pub struct CompressProgressInfo {
+    pub ratio_info: Cell<RatioInfo>
+}
 
-    impl ICompressProgressInfo for CompressProgressInfo {
-        pub fn SetRatioInfo(&self, in_size: *const u64, out_size: *const u64) -> HRESULT {
-            unsafe {
-                self.ratio_info.set(RatioInfo { in_size:*in_size, out_size: *out_size });
-            }
-            HRESULT::S_OK
+impl ICompressProgressInfo_Impl for CompressProgressInfo_Impl {
+    unsafe fn SetRatioInfo(&self, in_size: *const u64, out_size: *const u64) -> HRESULT {
+        unsafe {
+            self.ratio_info.set(RatioInfo { in_size:*in_size, out_size: *out_size });
         }
+        HRESULT::S_OK
     }
-
 }

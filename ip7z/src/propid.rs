@@ -1,5 +1,3 @@
-use com::AbiTransferable;
-
 use crate::win_ffi::VARTYPE;
 
 #[allow(non_camel_case_types)]
@@ -128,12 +126,5 @@ impl From<Z7PropIDs> for VARTYPE {
             //TODO fill the rest out
             _ => VARTYPE::VT_ERROR //todo RM 
         } 
-    }
-}
-
-unsafe impl AbiTransferable for Z7PropIDs {
-    type Abi = Self;
-    fn get_abi(&self) -> Self::Abi {
-        self.clone()
     }
 }

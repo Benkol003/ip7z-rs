@@ -98,8 +98,8 @@ pub union PROPVARIANT_union {
     pub bstrVal: ManuallyDrop<BSTR>,
     pub ptr: *mut std::ffi::c_void, // for all pointer fields
 
-                                    //unused
-                                    //pub(crate) punkVal: ManuallyDrop<IUnknown>, //com::IUnknown stores vtable as a pointer internally
+    //unused
+    //pub(crate) punkVal: ManuallyDrop<IUnknown>
 }
 
 #[derive(Debug)]

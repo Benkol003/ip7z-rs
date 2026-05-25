@@ -1,5 +1,7 @@
 be careful of impl functions that use out pointers, use std::ptr::write to assign to them, otherwise will try to call drop on uninitialised memory, maybe we should use MaybeUninit here?
 
+7zip ffi interface pointers dont take ownership and call release. use windows_core::Interface_Ref for this (which is transparent over e c_void pointer to the underlying vtable) to avoid memory leaks.
+
 Z7PropId's - map each property to a type and have a generalised get
 
 be able to mark interfaces or functions deprecated  
