@@ -1,6 +1,8 @@
 /// currently we copy the 7z source tree into out-dir, as makefiles will not work
 /// if we set out dir to a path containing spaces, and will also fail to build 'all' target if we set a custom output dir
 /// TODO if we just include source files here manually
+/// 
+/// TODO slow as hell in WSL
 
 fn main() {
     assert!(
@@ -14,10 +16,23 @@ fn main() {
         copy_folder(&z7_dir,&out_dir);
         patch_z7(&out_dir);
 
-        match std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap().as_str() {
-            "windows" => build_7z_msvc(z7_dir, out_dir),
-            "unix"  => build_7z_unix(z7_dir, out_dir),
-            t => panic!("unsupported target platform {}",t)
+        let target_family  = std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
+
+        match std::env::var("CARGO_CFG_TARGET_ENV").unwrap().as_str() {
+            "gnu" => {
+                if target_family.as_str() == "unix" || target_family.as_str() == "windows" {
+                    build_7z_unix(z7_dir, out_dir) //family is windows but env is gnu, is msys build
+                }else {
+                    panic!("unsupported target platform {} for env 'gnu'",target_family)
+                }
+            }
+            "msvc" => {
+                match target_family.as_str() {
+                    "windows" => build_7z_msvc(z7_dir, out_dir),
+                    t => panic!("unsupported target family {} for target env 'msvc'",t)
+                }
+            }
+            t => panic!("unsupported target env {}",t)
         }
 
     }
@@ -39,13 +54,28 @@ fn copy_folder(src: impl AsRef<std::path::Path>,dest: impl AsRef<std::path::Path
     }
 }
 
+fn link_win_libs() {
+    println!("cargo:rustc-link-lib=dylib=user32");
+    println!("cargo:rustc-link-lib=dylib=advapi32");
+    println!("cargo:rustc-link-lib=dylib=uuid");
+    println!("cargo:rustc-link-lib=dylib=oleaut32");
+}
+
 #[cfg(feature = "static")]
 fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::path::Path>) {
 
+    use std::path::PathBuf;
+    use path_slash::PathExt as _;
+    use path_slash::PathBufExt as _;
+    use path_slash::CowExt as _;
+
     //TODO setting MY_ARCH / -march / -mtune
+    //make sure to .replace("\\","/") on any paths, or will break in mingw
 
     let bundle_dir = out_dir.as_ref().join(Z7_BUNDLE);
-    let build_dir = bundle_dir.join("_o");
+    let bundle_dir = bundle_dir.to_slash().unwrap();
+    let build_dir = out_dir.as_ref().join(Z7_BUNDLE).join("_o");
+    let build_dir = build_dir.to_slash().unwrap();
 
     let cc = cc::Build::new().cpp(false).get_compiler();
     let cxx = cc::Build::new().cpp(true).get_compiler();
@@ -61,8 +91,10 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
         _ => &["USE_ASM=0"],//7zip_gcc.mak doesnt seem to build Asm/arm/, atm there is only a asm crc routine anyway
     };
 
+    let is_mingw = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && cxx.is_like_gnu();
+
     //TODO mingw builds are currently broken
-    let mingw_arg: &[String] = match std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && cxx.is_like_gnu() {
+    let mingw_arg: &[String] = match is_mingw {
         true => {
             let cc_path = cc.path().to_str().unwrap();
             let windres = if let Some(idx) = cc_path.find("-gcc") {
@@ -75,37 +107,59 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
         false => &[]
     };
 
+    let cc_path = cc.path().to_slash().unwrap();
+    let cxx_path = cxx.path().to_slash().unwrap();
+    let ar_path = PathBuf::from(ar.get_program());
+    let ar_path = ar_path.to_slash().unwrap();
+    let uasm_path = PathBuf::from(uasm::UASM_PATH);
+    let uasm_path = uasm_path.to_slash().unwrap();
 
-    let status = std::process::Command::new("make")
-    .current_dir(&bundle_dir)
-    .env("CC", cc.path())
-    .env("CXX",cxx.path())
-    .env("AR", ar.get_program())
-    .arg(format!("MY_ASM=\"{}\"",uasm::UASM_PATH)) //TODO gate behind asm feature
-    .args(asm_args)
+    // println!("cargo:warning=CC:{}",cc.path().display());
+    // println!("cargo:warning=CXX:{}",cxx.path().display()); 
+    // println!("cargo:warning=AR:{}",ar.get_program().display());
+    // println!("cargo:warning=BUNDLE DIR:{}",&*bundle_dir);
+    // println!("cargo:warning=BUILD DIR:{}",&*build_dir);
+    // println!("cargo:warning=is mingw?{:?}",mingw_arg);
+    // println!("cargo:warning=uasm path: {}",&*uasm_path);
+
+    let mut cmd = std::process::Command::new("make");
+    cmd.current_dir(&*bundle_dir)
+
+    //TODO why does this arg go missing if we put it at the end
     .arg("-f").arg("makefile.gcc")
+
     .arg("-j")
-    .args(mingw_arg)
-    .status().unwrap();
+    .env("CC", &*cc_path)
+    .env("CXX",&*cxx_path)
+    .env("AR", &*ar_path)
+    .arg(format!("MY_ASM=\"{}\"",uasm_path)) //TODO gate behind asm feature
+    .args(asm_args)
+    .args(mingw_arg);
+
+    
+    let status = cmd.status().unwrap();
     if !status.success() {
         panic!("make failed with {}",status);
     }
 
-    let objs: Vec<_> = std::fs::read_dir(&build_dir).unwrap()
+    let objs: Vec<_> = std::fs::read_dir(&*build_dir).unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path().file_name().unwrap().to_owned())
         .filter(|p| std::path::Path::new(p).extension().map(|e| e == "o").unwrap_or(false))
         .collect();
 
-    let status = ar.current_dir(&build_dir).arg("rcs").arg("lib7z.a").args(objs).status().unwrap();
+    let status = ar.current_dir(&*build_dir).arg("rcs").arg("lib7z.a").args(objs).status().unwrap();
     if !status.success() {
         panic!("ar failed with {}",status);
     }
 
 
-    println!("cargo:rustc-link-search={}",build_dir.display());
+    println!("cargo:rustc-link-search={}",build_dir);
     println!("cargo:rustc-link-lib=static:+whole-archive=7z");
     println!("cargo:rustc-link-lib=stdc++"); //this should go to CPPFLAGS instead
+    if is_mingw {
+        link_win_libs();
+    }
 }
 
 
@@ -157,9 +211,7 @@ fn build_7z_msvc(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
 
     println!("cargo:rustc-link-search={}",build_dir.display());
     println!("cargo:rustc-link-lib=static:+whole-archive=7z_static");
-    println!("cargo:rustc-link-lib=user32");
-    println!("cargo:rustc-link-lib=dylib=advapi32");
-    println!("cargo:rustc-link-lib=dylib=oleaut32");
+    link_win_libs();
 }
 
 fn patch_z7(z7_dir: impl AsRef<std::path::Path>) {
@@ -168,6 +220,10 @@ fn patch_z7(z7_dir: impl AsRef<std::path::Path>) {
     //remove submodule .git file
     std::fs::remove_file(&z7_dir.as_ref().join(".git")).unwrap();
     let repo = git2::Repository::init(&z7_dir).unwrap();
+
+    let mut config = repo.config().unwrap();
+    config.set_str("core.autocrlf", "input").unwrap();
+
     repo.set_head("refs/heads/master").unwrap();
     let mut index = repo.index().unwrap();
     index.add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None).unwrap();
@@ -196,22 +252,22 @@ fn patch_z7(z7_dir: impl AsRef<std::path::Path>) {
 
         //split upto diff contents
         let mut commit_msg = String::new();
-        let mut diff = String::new();
+        let mut diff_str = String::new();
         let mut found_diff: bool = false;
         for line in message.body_text(0).unwrap().lines() {
             if found_diff || line.starts_with("diff --git") {
                 found_diff = true;
-                diff.push_str(line);
-                diff.push('\n');
+                diff_str.push_str(line);
+                diff_str.push('\n');
             }else{
                 commit_msg.push_str(line);
                 commit_msg.push('\n');
             }
         }
 
-        let diff = git2::Diff::from_buffer(diff.as_bytes()).unwrap();
+        let diff = git2::Diff::from_buffer(diff_str.as_bytes()).unwrap();
 
-        repo.apply(&diff, git2::ApplyLocation::Both, None).unwrap();
+        repo.apply(&diff, git2::ApplyLocation::WorkDir, None).unwrap();
         index.add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None).unwrap();
 
         index.write().unwrap();

@@ -1,6 +1,6 @@
-From c1dc0e0d6a24a2b88ce3c0fd0f51722a99f91d51 Mon Sep 17 00:00:00 2001
+From 236e972e8d9d52e3088b3dd7e7f7e08f9a96cfcd Mon Sep 17 00:00:00 2001
 From: UnladenCoconut <benjkollar03@gmail.com>
-Date: Wed, 13 May 2026 23:22:38 +0100
+Date: Tue, 30 Jun 2026 14:39:51 +0100
 Subject: [PATCH] suppress GCC 16+ -Warray-bounds false positives
 
 see https://github.com/ip7z/7zip/issues/214
@@ -36,5 +36,5 @@ index a78c0fa..c7f92c8 100644
  
  # for object file
 -- 
-2.54.0
+2.52.0.windows.1
 
