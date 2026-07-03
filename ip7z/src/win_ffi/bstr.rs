@@ -193,8 +193,9 @@ unsafe fn SysFreeString(psz: *mut wchar) {
 
 //it looks like SysAllocString/SysFreeString dont use malloc/free, maybe using CoTaskMemAlloc
 //for 7zip on windows we must then use SysFreeString for BSTR's passed across the ffi
+//Note: link lib name must be lowercase to work on cross x86_64-pc-windows-gnu builds
 #[cfg(windows)]
-#[link(name = "OleAut32", kind = "dylib")]
+#[link(name = "oleaut32", kind = "dylib")]
 unsafe extern "C" {
     fn SysAllocStringLen(psz: *const wchar, len: u32) -> *mut wchar;
     fn SysFreeString(psz: *const wchar);

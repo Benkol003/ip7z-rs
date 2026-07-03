@@ -102,7 +102,7 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
             } else {
                 "RC=windres".to_string()
             };
-            &["IS_MINGW=1".into(),windres,"CFLAGS=-loleaut32".into()]
+            &["IS_MINGW=1".into(),windres]
         },
         false => &[]
     };
@@ -114,20 +114,20 @@ fn build_7z_unix(z7_dir: impl AsRef<std::path::Path>, out_dir: impl AsRef<std::p
     let uasm_path = PathBuf::from(uasm::UASM_PATH);
     let uasm_path = uasm_path.to_slash().unwrap();
 
-    // println!("cargo:warning=CC:{}",cc.path().display());
-    // println!("cargo:warning=CXX:{}",cxx.path().display()); 
-    // println!("cargo:warning=AR:{}",ar.get_program().display());
-    // println!("cargo:warning=BUNDLE DIR:{}",&*bundle_dir);
-    // println!("cargo:warning=BUILD DIR:{}",&*build_dir);
-    // println!("cargo:warning=is mingw?{:?}",mingw_arg);
-    // println!("cargo:warning=uasm path: {}",&*uasm_path);
+    println!("cargo:warning=CC:{}",cc.path().display());
+    println!("cargo:warning=CXX:{}",cxx.path().display()); 
+    println!("cargo:warning=AR:{}",ar.get_program().display());
+    println!("cargo:warning=BUNDLE DIR:{}",&*bundle_dir);
+    println!("cargo:warning=BUILD DIR:{}",&*build_dir);
+    println!("cargo:warning=is mingw?{:?}",mingw_arg);
+    println!("cargo:warning=uasm path: {}",&*uasm_path);
 
     let mut cmd = std::process::Command::new("make");
     cmd.current_dir(&*bundle_dir)
 
     //TODO why does this arg go missing if we put it at the end
     .arg("-f").arg("makefile.gcc")
-
+    .arg("--output-sync=target")
     .arg("-j")
     .env("CC", &*cc_path)
     .env("CXX",&*cxx_path)

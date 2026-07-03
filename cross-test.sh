@@ -6,12 +6,13 @@ targets=(\
   "armv5te-unknown-linux-gnueabi" \
   "armv7-unknown-linux-gnueabi" \
   "i686-unknown-linux-gnu" \
-  "x86_64-unknown-linux-gnu"
+  "x86_64-unknown-linux-gnu" \
 
-  #"x86_64-unknown-freebsd"
   #mingw
-  #"i686-pc-windows-gnu" \
-  #"x86_64-pc-windows-gnu" \
+  "i686-pc-windows-gnu" \
+  "x86_64-pc-windows-gnu" \
+  
+  #x86_64-unknown-freebsd
 )
 
 for target in "${targets[@]}"; do
